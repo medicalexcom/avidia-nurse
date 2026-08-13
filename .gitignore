@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native builds
+ios/
+android/
+*.ipa
+*.apk
+*.aab
+
+# Environment files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Testing / coverage
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Metro
+.metro-health-check*
+
+# OS / editor
+.DS_Store
+*.pem
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log

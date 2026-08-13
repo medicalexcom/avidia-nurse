@@ -42,6 +42,8 @@ jobs:
         env:
           EXPO_BASE_URL: /avidia-nurse
           EXPO_PUBLIC_APP_ENV: preview
+          EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Add SPA fallback for client-side routes
         # GitHub Pages serves 404.html for unknown paths; serving the app shell

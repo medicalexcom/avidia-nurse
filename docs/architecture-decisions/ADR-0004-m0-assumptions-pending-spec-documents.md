@@ -1,6 +1,6 @@
 # ADR-0004: M0 implemented from stated requirements; spec documents pending
 
-- **Status:** Accepted (provisional — review when spec documents are available)
+- **Status:** Resolved 2026-08-12 — spec documents received; reconciliation performed (see ADR-0005)
 - **Date:** 2026-08-12
 - **Milestone:** M0
 
@@ -33,3 +33,9 @@ When the three documents are provided:
    are grounded in the actual contract.
 
 No M1 work should begin until this reconciliation happens.
+
+## Resolution (2026-08-12)
+
+All three documents were received the same day. The reconciliation audit was performed against the
+Playbook (authority 1), Blueprint (authority 2), and Study System (authority 3). Corrections applied
+are recorded in ADR-0005; the documents themselves now live in `docs/product/`. This ADR is closed.

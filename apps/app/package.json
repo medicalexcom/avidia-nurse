@@ -1,5 +1,5 @@
 {
-  "name": "@avidia/student",
+  "name": "@avidia/app",
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
@@ -13,7 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@avidia/core": "0.1.0",
+    "@avidia/config": "workspace:*",
     "@expo/metro-runtime": "~57.0.9",
     "expo": "~57.0.12",
     "expo-status-bar": "~57.0.1",
@@ -24,8 +24,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3",
     "jest": "~29.7.0",
-    "jest-expo": "~57.0.4"
+    "jest-expo": "~57.0.4",
+    "typescript": "~6.0.3"
   }
 }

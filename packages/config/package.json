@@ -1,8 +1,8 @@
 {
-  "name": "@avidia/core",
+  "name": "@avidia/config",
   "version": "0.1.0",
   "private": true,
-  "description": "Platform-agnostic domain logic for Avidia Nurse (no React, no LLM dependencies)",
+  "description": "Shared configuration for Avidia Nurse: schema-validated environment handling (no React, no LLM dependencies)",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {

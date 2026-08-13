@@ -1,4 +1,4 @@
-import { validateClientEnv, type ClientEnv } from '@avidia/core';
+import { validateClientEnv, type ClientEnv } from '@avidia/config';
 
 /**
  * Validated, typed client environment. Expo inlines EXPO_PUBLIC_* variables at
@@ -10,5 +10,7 @@ import { validateClientEnv, type ClientEnv } from '@avidia/core';
  */
 export const env: ClientEnv = validateClientEnv({
   EXPO_PUBLIC_APP_ENV: process.env.EXPO_PUBLIC_APP_ENV,
-  EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+  EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL,
+  EXPO_PUBLIC_WEB_APP_URL: process.env.EXPO_PUBLIC_WEB_APP_URL,
+  EXPO_PUBLIC_ANALYTICS_KEY: process.env.EXPO_PUBLIC_ANALYTICS_KEY,
 });

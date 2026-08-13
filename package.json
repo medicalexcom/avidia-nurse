@@ -3,10 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Avidia Nurse — adaptive nursing-education platform (monorepo)",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.17.0",
   "engines": {
     "node": ">=20"
   },
@@ -14,11 +11,11 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "web": "npm run web --workspace @avidia/student",
-    "start": "npm run start --workspace @avidia/student",
-    "build:web": "npm run build:web --workspace @avidia/student"
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "web": "pnpm --filter @avidia/app web",
+    "start": "pnpm --filter @avidia/app start",
+    "build:web": "turbo run build:web"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
@@ -27,7 +24,8 @@
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.1.0",
     "prettier": "^3.4.2",
-    "typescript": "~5.8.3",
+    "turbo": "^2.5.0",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.22.0"
   }
 }

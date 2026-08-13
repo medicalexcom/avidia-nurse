@@ -15,7 +15,7 @@ two experiences drift apart — unacceptable for a small team with a nontechnica
 One student application built with Expo (React Native + Expo Web + TypeScript) targets all three
 platforms from a single codebase. Desktop/web is a first-class target: screens use responsive
 patterns (`useWindowDimensions`, breakpoint-conditional styles, and `Platform`/`.web.tsx` variants
-where needed) rather than a mobile layout stretched to desktop. `apps/student/src/screens/HomeScreen.tsx`
+where needed) rather than a mobile layout stretched to desktop. `apps/app/src/screens/HomeScreen.tsx`
 establishes this pattern from the first screen.
 
 A separate faculty/admin web application may be added later only if institutional requirements

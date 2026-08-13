@@ -32,7 +32,11 @@ export const clientEnvSchema = z.object({
   /** Which deployment environment the app believes it is running in. */
   EXPO_PUBLIC_APP_ENV: z.enum(APP_ENVIRONMENTS).default('development'),
   /** Base URL of the Avidia backend API. Optional until the backend exists (M2+). */
-  EXPO_PUBLIC_API_URL: httpUrl.optional(),
+  EXPO_PUBLIC_API_BASE_URL: httpUrl.optional(),
+  /** Public URL of the deployed web app (deep links, share links). Optional in M0. */
+  EXPO_PUBLIC_WEB_APP_URL: httpUrl.optional(),
+  /** Public (non-secret) analytics write key. Optional until analytics lands. */
+  EXPO_PUBLIC_ANALYTICS_KEY: z.string().min(1).optional(),
 });
 
 export type ClientEnv = z.infer<typeof clientEnvSchema>;

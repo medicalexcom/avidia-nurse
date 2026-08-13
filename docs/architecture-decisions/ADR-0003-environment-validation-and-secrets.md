@@ -13,8 +13,8 @@ provider keys and database service credentials that must never reach the client.
 ## Decision
 
 1. All client-visible configuration uses Expo's `EXPO_PUBLIC_*` convention and is validated at app
-   startup against a Zod schema (`packages/core/src/env.ts`, applied in
-   `apps/student/src/config/env.ts`). Invalid configuration fails fast with a readable error.
+   startup against a Zod schema (`packages/config/src/env.ts`, applied in
+   `apps/app/src/config/env.ts`). Invalid configuration fails fast with a readable error.
 2. Only non-secret values may ever use the `EXPO_PUBLIC_` prefix. Secrets (AI provider keys,
    service-role keys, signing keys) will live exclusively in backend environment configuration
    introduced with the backend milestone, validated by an equivalent server-side schema.

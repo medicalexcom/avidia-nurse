@@ -97,6 +97,18 @@ export const PROCESSING_STATUS_LABELS: Record<ProcessingStatus, string> = {
   failed: 'Upload failed',
 };
 
+/**
+ * M5 semantic-indexing lifecycle — a SEPARATE column (documents.index_status)
+ * so extraction states above stay exactly as M4 defined them. A document is
+ * indexable once extraction made it 'ready'; re-extraction resets this to
+ * 'pending' so chunks are always rebuilt from the latest sections.
+ *
+ *   pending -> indexing -> indexed | failed;  failed/indexing -> pending (retry)
+ */
+export const INDEX_STATUSES = ['pending', 'indexing', 'indexed', 'failed'] as const;
+
+export type IndexStatus = (typeof INDEX_STATUSES)[number];
+
 /** Lower-cased extension of a filename, without the dot; null when absent. */
 export function fileExtensionOf(filename: string): string | null {
   const match = /\.([A-Za-z0-9]+)$/.exec(filename.trim());

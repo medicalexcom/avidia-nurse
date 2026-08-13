@@ -8,11 +8,13 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "start": "tsx src/index.ts",
-    "start:once": "tsx src/index.ts --once"
+    "start:once": "tsx src/index.ts --once",
+    "search": "tsx src/index.ts --search"
   },
   "dependencies": {
     "@avidia/domain": "workspace:*",
     "@avidia/ingestion": "workspace:*",
+    "@avidia/rag": "workspace:*",
     "@supabase/supabase-js": "^2.112.3"
   },
   "devDependencies": {

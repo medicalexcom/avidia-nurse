@@ -113,6 +113,9 @@ importers:
       '@avidia/ingestion':
         specifier: workspace:*
         version: link:../../packages/ingestion
+      '@avidia/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
       '@supabase/supabase-js':
         specifier: ^2.112.3
         version: 2.112.3
@@ -202,6 +205,31 @@ importers:
       pdfjs-dist:
         specifier: 3.11.174
         version: 3.11.174
+    devDependencies:
+      '@babel/core':
+        specifier: ^7.26.0
+        version: 7.29.7
+      '@babel/preset-env':
+        specifier: ^7.26.0
+        version: 7.29.7(@babel/core@7.29.7)
+      '@babel/preset-typescript':
+        specifier: ^7.26.0
+        version: 7.29.7(@babel/core@7.29.7)
+      '@types/jest':
+        specifier: ^29.5.14
+        version: 29.5.14
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@26.2.0)
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
+  packages/rag:
+    dependencies:
+      '@avidia/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       '@babel/core':
         specifier: ^7.26.0

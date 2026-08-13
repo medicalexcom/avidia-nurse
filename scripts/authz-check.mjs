@@ -48,6 +48,16 @@
  *   21. Owner reads own sections; cross-user section reads return nothing.
  *   22. Deleting the course cascades to document_sections (derived content
  *       never outlives its document).
+ *
+ * M5 checks (spec T/U/W): source_chunks + retrieval scoping.
+ *   23. Only the service role can call replace_source_chunks; clients cannot
+ *       write source_chunks directly.
+ *   24. Owner reads own chunk text/provenance, but the raw embedding vector
+ *       is NOT selectable by any client (column-level grant).
+ *   25. User B and anonymous clients read no chunks even with exact ids.
+ *   26. search_course_chunks works for the owner, raises for another user's
+ *       course, and is denied to anonymous callers.
+ *   27. Deleting the course cascades to source_chunks (no orphan vectors).
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -486,6 +496,131 @@ try {
     .eq('document_id', docId);
   check('anonymous client reads no sections', (anonSections.data ?? []).length === 0);
 
+  // -------------------------------------------------------------------------
+  // M5 checks (spec T/U/W): source_chunks + course-scoped retrieval.
+  // -------------------------------------------------------------------------
+
+  const unitVector = `[${Array.from({ length: 1536 }, (_, i) => (i === 0 ? 1 : 0)).join(',')}]`;
+
+  // 23. Chunks are written ONLY through the service-role RPC.
+  const chunkSeed = await admin.rpc('replace_source_chunks', {
+    p_document_id: docId,
+    p_chunks: [
+      {
+        ordinal: 0,
+        content: 'Authz chunk: furosemide is a loop diuretic.',
+        token_estimate: 12,
+        source_locator: { type: 'txt', sectionIndex: 0 },
+        section_start: 0,
+        section_end: 0,
+        embedding: unitVector,
+        embedding_provider: 'authz',
+        embedding_model: 'authz-test',
+        embedding_version: 'v1',
+      },
+    ],
+  });
+  check(
+    'service role replaces chunks via RPC',
+    !chunkSeed.error && chunkSeed.data === 1,
+    chunkSeed.error?.message
+  );
+  const clientChunkRpc = await a.client.rpc('replace_source_chunks', {
+    p_document_id: docId,
+    p_chunks: [],
+  });
+  check('authenticated client cannot call replace_source_chunks', Boolean(clientChunkRpc.error));
+  const chunkIns = await a.client.from('source_chunks').insert({
+    document_id: docId,
+    course_id: courseId,
+    ordinal: 1,
+    content: 'forged chunk',
+    token_estimate: 2,
+    source_locator: {},
+    section_start: 0,
+    section_end: 0,
+    embedding: unitVector,
+    embedding_provider: 'x',
+    embedding_model: 'x',
+    embedding_version: 'x',
+  });
+  check('client cannot insert source_chunks directly', Boolean(chunkIns.error));
+  const chunkUpd = await a.client
+    .from('source_chunks')
+    .update({ content: 'tampered' })
+    .eq('document_id', docId)
+    .select('id');
+  check(
+    'client cannot update source_chunks',
+    Boolean(chunkUpd.error) || (chunkUpd.data ?? []).length === 0
+  );
+  const chunkDel = await a.client
+    .from('source_chunks')
+    .delete()
+    .eq('document_id', docId)
+    .select('id');
+  check(
+    'client cannot delete source_chunks',
+    Boolean(chunkDel.error) || (chunkDel.data ?? []).length === 0
+  );
+
+  // 24. Owner reads text + provenance, but never the raw vector (spec U).
+  const ownChunks = await a.client
+    .from('source_chunks')
+    .select('id, content, source_locator, ordinal')
+    .eq('document_id', docId);
+  check(
+    'owner reads own chunk text and provenance',
+    (ownChunks.data ?? []).length === 1 &&
+      ownChunks.data?.[0]?.content === 'Authz chunk: furosemide is a loop diuretic.',
+    ownChunks.error?.message
+  );
+  const chunkId = ownChunks.data?.[0]?.id;
+  const vectorRead = await a.client.from('source_chunks').select('embedding').eq('id', chunkId);
+  check('raw embedding vector is not selectable by clients', Boolean(vectorRead.error));
+
+  // 25. Cross-user and anonymous chunk reads return nothing, even by id.
+  const bChunks = await b.client.from('source_chunks').select('id, content').eq('id', chunkId);
+  check("user cannot read another user's chunks by guessed id", (bChunks.data ?? []).length === 0);
+  const anonChunks = await userClient()
+    .from('source_chunks')
+    .select('id, content')
+    .eq('id', chunkId);
+  check('anonymous client reads no chunks', (anonChunks.data ?? []).length === 0);
+
+  // 26. Retrieval is course-scoped inside the database function (spec K/T).
+  const ownSearch = await a.client.rpc('search_course_chunks', {
+    p_course_id: courseId,
+    p_query: 'furosemide',
+    p_query_embedding: unitVector,
+    p_top_k: 5,
+    p_min_similarity: 0,
+    p_document_id: null,
+  });
+  check(
+    'owner retrieves own course chunks via search RPC',
+    !ownSearch.error && (ownSearch.data ?? []).length === 1,
+    ownSearch.error?.message
+  );
+  const bSearch = await b.client.rpc('search_course_chunks', {
+    p_course_id: courseId,
+    p_query: 'furosemide',
+    p_query_embedding: unitVector,
+    p_top_k: 5,
+    p_min_similarity: 0,
+    p_document_id: null,
+  });
+  check("search RPC raises for another user's course", Boolean(bSearch.error));
+  const anonSearch = await userClient().rpc('search_course_chunks', {
+    p_course_id: courseId,
+    p_query: 'furosemide',
+    p_query_embedding: unitVector,
+    p_top_k: 5,
+    p_min_similarity: 0,
+    p_document_id: null,
+  });
+  check('search RPC is denied to anonymous callers', Boolean(anonSearch.error));
+
   // 18. Deleting a course cascades to its modules/exams/links/documents but
   // never touches the profile. (The app removes storage objects before the
   // course row — SQL cannot cascade into storage, so we clean up here.)
@@ -495,18 +630,21 @@ try {
   const orphanExams = await admin.from('exams').select('id').eq('course_id', courseId);
   const orphanLinks = await admin.from('exam_modules').select('exam_id').eq('exam_id', examId);
   const orphanDocs = await admin.from('documents').select('id').eq('course_id', courseId);
-  // 22. Derived content (document_sections) must also be gone.
+  // 22/27. Derived content (document_sections AND source_chunks) must also
+  // be gone — retrieval never sees deleted material (spec W).
   const orphanSections = await admin
     .from('document_sections')
     .select('id')
     .eq('document_id', docId);
+  const orphanChunks = await admin.from('source_chunks').select('id').eq('document_id', docId);
   check(
-    'course delete cascades to modules, exams, exam_modules, documents and sections',
+    'course delete cascades to modules, exams, exam_modules, documents, sections and chunks',
     (orphanModules.data ?? []).length === 0 &&
       (orphanExams.data ?? []).length === 0 &&
       (orphanLinks.data ?? []).length === 0 &&
       (orphanDocs.data ?? []).length === 0 &&
-      (orphanSections.data ?? []).length === 0
+      (orphanSections.data ?? []).length === 0 &&
+      (orphanChunks.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

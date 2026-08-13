@@ -91,6 +91,11 @@ export function createSupabaseWorkerClient(client: SupabaseClient): WorkerClient
           error_message: null,
           processing_detail: null,
           processed_at: new Date().toISOString(),
+          // Fresh sections invalidate any previous chunks: reset the M5
+          // indexing lifecycle so the indexer rebuilds them (never stale).
+          index_status: 'pending',
+          index_detail: null,
+          indexed_at: null,
         })
         .eq('id', documentId)
         .eq('processing_status', 'processing');

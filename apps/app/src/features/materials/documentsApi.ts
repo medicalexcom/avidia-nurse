@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DocumentType, MaterialExtension, ProcessingStatus } from '@avidia/domain';
+import type {
+  DocumentType,
+  IndexStatus,
+  MaterialExtension,
+  ProcessingStatus,
+} from '@avidia/domain';
 
 /**
  * Data access for course-material document rows (M3).
@@ -23,6 +28,8 @@ export interface DocumentRow {
   storage_key: string | null;
   document_type: DocumentType;
   processing_status: ProcessingStatus;
+  /** M5 semantic-indexing lifecycle; drives the "Ready to study" label. */
+  index_status: IndexStatus;
   error_message: string | null;
   content_hash: string | null;
   created_at: string;

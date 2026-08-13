@@ -41,10 +41,26 @@ const LOAD_ERROR = 'We could not load your materials. Please try again.';
  * (stack traces, parser errors, paths) never reaches this screen.
  */
 
-/** Failed uploads and failed processing runs read differently to students. */
+/**
+ * Failed uploads and failed processing runs read differently to students.
+ * For extracted documents the label reflects the M5 indexing lifecycle in
+ * honest, student-facing terms — "Ready to study" once retrieval works,
+ * "Preparing study tools" while chunks/embeddings are being built (never
+ * jargon like "vectorized"). An internal indexing failure is retried by the
+ * worker; the document itself remains readable, so it stays "Ready".
+ */
 function statusLabelFor(doc: DocumentRow): string {
   if (doc.processing_status === 'failed' && doc.storage_key) {
     return 'Processing failed';
+  }
+  if (doc.processing_status === 'ready') {
+    if (doc.index_status === 'indexed') {
+      return 'Ready to study';
+    }
+    if (doc.index_status === 'pending' || doc.index_status === 'indexing') {
+      return 'Preparing study tools';
+    }
+    return PROCESSING_STATUS_LABELS.ready;
   }
   return PROCESSING_STATUS_LABELS[doc.processing_status];
 }

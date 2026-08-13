@@ -91,6 +91,7 @@ const uploadedDoc: DocumentRow = {
   storage_key: 'user-1/course-1/doc-1/Cardiac Week 3.pdf',
   document_type: 'lecture',
   processing_status: 'uploaded',
+  index_status: 'pending',
   error_message: null,
   content_hash: 'a'.repeat(64),
   created_at: '2026-08-10T15:00:00.000Z',
@@ -227,13 +228,29 @@ describe('MaterialsScreen', () => {
     expect(uploadService.uploadMaterial).not.toHaveBeenCalled();
   });
 
-  it('shows Ready without any processing actions', async () => {
-    const readyDoc: DocumentRow = { ...uploadedDoc, processing_status: 'ready' };
-    mocked(documentsApi.listDocuments).mockResolvedValue([readyDoc]);
+  it('shows honest indexing states for a ready document', async () => {
+    const preparingDoc: DocumentRow = { ...uploadedDoc, processing_status: 'ready' };
+    mocked(documentsApi.listDocuments).mockResolvedValue([preparingDoc]);
 
     await render(<MaterialsScreen courseId="course-1" />);
     await fireEvent.press(await screen.findByText('Cardiac Week 3.pdf'));
-    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0);
+    // Extracted but not yet indexed: study tools are still being prepared.
+    expect(screen.getAllByText('Preparing study tools').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Process')).toBeNull();
+    expect(screen.queryByText('Try processing again')).toBeNull();
+  });
+
+  it('shows Ready to study once a document is indexed', async () => {
+    const studyReadyDoc: DocumentRow = {
+      ...uploadedDoc,
+      processing_status: 'ready',
+      index_status: 'indexed',
+    };
+    mocked(documentsApi.listDocuments).mockResolvedValue([studyReadyDoc]);
+
+    await render(<MaterialsScreen courseId="course-1" />);
+    await fireEvent.press(await screen.findByText('Cardiac Week 3.pdf'));
+    expect(screen.getAllByText('Ready to study').length).toBeGreaterThan(0);
     expect(screen.queryByText('Process')).toBeNull();
     expect(screen.queryByText('Try processing again')).toBeNull();
   });

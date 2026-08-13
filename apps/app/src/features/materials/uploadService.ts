@@ -10,6 +10,7 @@ import { sha256Hex } from './contentHash';
 import {
   createDocumentRow,
   deleteDocumentRow,
+  enqueueDocument,
   findDuplicateDocument,
   listDocuments,
   markDocumentFailed,
@@ -31,9 +32,11 @@ import { removeMaterialObjects, uploadMaterialObject } from './materialStorage';
  * student sees the failed material and can delete it or retry (retry deletes
  * the failed row and starts a fresh upload with the re-picked file).
  *
- * Future M4 boundary: a storage-complete row (status 'uploaded') is exactly
- * the input the ingestion worker will consume (uploaded -> queued -> ...).
- * Nothing here pretends processing already happened.
+ * M4: after a successful upload the document is enqueued for extraction
+ * (uploaded -> queued) on a best-effort basis; the background worker takes it
+ * from there (queued -> processing -> ready | failed). If enqueueing fails,
+ * the document simply rests at 'uploaded' and the student can press
+ * "Process" on the Materials screen.
  */
 
 const UPLOAD_FAILED_MESSAGE =
@@ -109,9 +112,23 @@ export async function uploadMaterial(
     };
   }
 
+  // Best-effort enqueue for extraction (M4). Failure is not an upload
+  // failure: the material is safely stored and can be processed later.
+  let queued = false;
+  try {
+    await enqueueDocument(client, row.id);
+    queued = true;
+  } catch {
+    // Intentionally swallowed — the row stays 'uploaded' with a Process action.
+  }
+
   return {
     kind: 'uploaded',
-    document: { ...row, storage_key: storageKey, processing_status: 'uploaded' },
+    document: {
+      ...row,
+      storage_key: storageKey,
+      processing_status: queued ? 'queued' : 'uploaded',
+    },
   };
 }
 

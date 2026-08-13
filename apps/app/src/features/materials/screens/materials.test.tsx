@@ -46,6 +46,7 @@ jest.mock('../../courses/coursesApi', () => ({
 }));
 jest.mock('../documentsApi', () => ({
   listDocuments: jest.fn(),
+  enqueueDocument: jest.fn(),
 }));
 jest.mock('../materialStorage', () => ({
   createMaterialSignedUrl: jest.fn(),
@@ -184,6 +185,57 @@ describe('MaterialsScreen', () => {
       { mocked: true },
       expect.objectContaining({ id: 'doc-2' })
     );
+  });
+
+  it('offers Process for an uploaded document and enqueues it', async () => {
+    const queuedDoc: DocumentRow = { ...uploadedDoc, processing_status: 'queued' };
+    mocked(documentsApi.listDocuments)
+      .mockResolvedValueOnce([uploadedDoc])
+      .mockResolvedValue([queuedDoc]);
+    mocked(documentsApi.enqueueDocument).mockResolvedValue(undefined);
+
+    await render(<MaterialsScreen courseId="course-1" />);
+    await fireEvent.press(await screen.findByText('Cardiac Week 3.pdf'));
+    await fireEvent.press(screen.getByText('Process'));
+    await waitFor(() => {
+      expect(documentsApi.enqueueDocument).toHaveBeenCalledWith({ mocked: true }, 'doc-1');
+    });
+    await screen.findByText('Queued');
+  });
+
+  it('shows Processing failed with a safe message and re-enqueues without re-upload', async () => {
+    const processingFailed: DocumentRow = {
+      ...uploadedDoc,
+      id: 'doc-4',
+      processing_status: 'failed',
+      error_message: 'This file is password-protected, so its text cannot be read.',
+    };
+    mocked(documentsApi.listDocuments).mockResolvedValue([processingFailed]);
+    mocked(documentsApi.enqueueDocument).mockResolvedValue(undefined);
+
+    await render(<MaterialsScreen courseId="course-1" />);
+    await fireEvent.press(await screen.findByText('Cardiac Week 3.pdf'));
+    // Distinguished from an upload failure: the stored file exists.
+    expect(screen.getAllByText('Processing failed').length).toBeGreaterThan(0);
+    expect(screen.getByText(/password-protected/)).toBeTruthy();
+    expect(screen.queryByText('Try again')).toBeNull(); // no re-pick needed
+
+    await fireEvent.press(screen.getByText('Try processing again'));
+    await waitFor(() => {
+      expect(documentsApi.enqueueDocument).toHaveBeenCalledWith({ mocked: true }, 'doc-4');
+    });
+    expect(uploadService.uploadMaterial).not.toHaveBeenCalled();
+  });
+
+  it('shows Ready without any processing actions', async () => {
+    const readyDoc: DocumentRow = { ...uploadedDoc, processing_status: 'ready' };
+    mocked(documentsApi.listDocuments).mockResolvedValue([readyDoc]);
+
+    await render(<MaterialsScreen courseId="course-1" />);
+    await fireEvent.press(await screen.findByText('Cardiac Week 3.pdf'));
+    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Process')).toBeNull();
+    expect(screen.queryByText('Try processing again')).toBeNull();
   });
 });
 

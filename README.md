@@ -5,31 +5,36 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M3 — Course Material Upload and Storage.** On top of the M2 course
-structure, students can now upload course materials (PDF, PPTX, DOCX, TXT) or paste notes into
-their courses. Files live in a private Supabase Storage bucket behind per-student policies, with
-short-lived signed-URL access, duplicate detection, retry for failed uploads, and safe deletion.
-Materials rest at status `uploaded` — ingestion/extraction begins in M4. AI study tools and
-analytics arrive in later milestones and are clearly marked as placeholders in the app.
+**Current milestone: M4 — Document Extraction and Processing.** Uploaded materials (PDF, PPTX,
+DOCX, TXT) are now processed by a background worker into ordered, provenance-preserving
+`document_sections` (page numbers, slide numbers, headings, bullet hierarchy, tables, speaker
+notes) using deterministic parsers — no AI calls, no OCR (image-only PDFs are flagged, not
+faked). Documents move through `uploaded → queued → processing → ready | failed` with
+database-enforced transitions, idempotent reprocessing, and student-safe error messages.
+Semantic concepts, embeddings and retrieval (RAG) begin in M5; AI study tools and analytics
+arrive in later milestones and are clearly marked as placeholders in the app.
 
 ## Repository structure
 
 ```
 avidia-nurse/
 ├── apps/
-│   └── app/                # The single cross-platform student app (Expo / React Native / Expo Web)
-│       ├── app/            # expo-router routes: (auth) sign-in/up, (app) authenticated shell
-│       ├── app.json        # Expo configuration (iOS/Android/web targets)
-│       └── src/
-│           ├── config/     # Validated environment configuration
-│           ├── lib/        # Supabase client (session persistence, token refresh)
-│           ├── features/   # auth, profile, courses, materials (upload/storage/screens)
-│           └── ui/         # Theme, shared components, responsive navigation shell
+│   ├── app/                # The single cross-platform student app (Expo / React Native / Expo Web)
+│   │   ├── app/            # expo-router routes: (auth) sign-in/up, (app) authenticated shell
+│   │   ├── app.json        # Expo configuration (iOS/Android/web targets)
+│   │   └── src/
+│   │       ├── config/     # Validated environment configuration
+│   │       ├── lib/        # Supabase client (session persistence, token refresh)
+│   │       ├── features/   # auth, profile, courses, materials (upload/storage/screens)
+│   │       └── ui/         # Theme, shared components, responsive navigation shell
+│   └── worker/             # Background document-processing worker (service role, Node/tsx):
+│                           # claims queued documents, extracts, stores sections, sets status
 ├── packages/
 │   ├── config/             # Platform-agnostic shared configuration (no React, no LLM deps)
-│   └── domain/             # Pure domain logic: validation, timezone-safe time math, exam
-│                           # countdowns. Further packages (adaptive-engine, ai-gateway, …)
-│                           # are added at the milestones that give them real content.
+│   ├── domain/             # Pure domain logic: validation, timezone-safe time math, exam
+│   │                       # countdowns, section/provenance model and state machine
+│   └── ingestion/          # Deterministic PDF/PPTX/DOCX/TXT extraction (no AI, no network)
+│                           # plus in-memory test-fixture builders
 ├── docs/
 │   ├── product/                 # The three governing specification documents
 │   ├── architecture-decisions/  # ADRs — why the architecture is the way it is

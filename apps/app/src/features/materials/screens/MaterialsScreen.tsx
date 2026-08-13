@@ -21,7 +21,7 @@ import {
 } from '../../../ui/components';
 import { colors, spacing } from '../../../ui/theme';
 import { fetchOwnCourse, type Course } from '../../courses/coursesApi';
-import { listDocuments, type DocumentRow } from '../documentsApi';
+import { enqueueDocument, listDocuments, type DocumentRow } from '../documentsApi';
 import { createMaterialSignedUrl } from '../materialStorage';
 import { deleteMaterial, uploadMaterial } from '../uploadService';
 import { pickMaterialFile } from '../filePicker';
@@ -30,13 +30,24 @@ const TWO_COLUMN_MIN_WIDTH = 900;
 const LOAD_ERROR = 'We could not load your materials. Please try again.';
 
 /**
- * Materials list for a course (M3, spec H).
+ * Materials list for a course (M3 spec H, M4 spec K).
  *
- * Shows metadata + status for every uploaded document; tapping a row expands
- * its details with Open (short-lived signed URL), Retry (failed uploads) and
- * Delete (with confirmation). No AI analysis appears here — documents rest at
- * "Uploaded" until the M4 ingestion pipeline exists.
+ * Shows metadata + status for every document. Documents now move through the
+ * M4 pipeline (Queued → Processing → Ready), and failures are split by kind:
+ * a failed *upload* (no stored object) offers "Try again" (re-pick the file),
+ * while a failed *processing* run (object safely stored) offers
+ * "Try processing again" (re-enqueue — no re-upload needed). Error messages
+ * shown here are the student-safe ones the worker writes; internal detail
+ * (stack traces, parser errors, paths) never reaches this screen.
  */
+
+/** Failed uploads and failed processing runs read differently to students. */
+function statusLabelFor(doc: DocumentRow): string {
+  if (doc.processing_status === 'failed' && doc.storage_key) {
+    return 'Processing failed';
+  }
+  return PROCESSING_STATUS_LABELS[doc.processing_status];
+}
 export function MaterialsScreen({ courseId }: { courseId: string }) {
   const { user } = useAuth();
   const timezone = useUserTimezone();
@@ -95,6 +106,21 @@ export function MaterialsScreen({ courseId }: { courseId: string }) {
     } catch {
       // Storage removal is idempotent, so deleting again converges.
       setError('We could not delete this material. Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** uploaded -> queued, or failed(processing) -> queued. No re-upload. */
+  const onProcess = async (doc: DocumentRow) => {
+    const client = getSupabase();
+    if (!client || busyId) return;
+    setBusyId(doc.id);
+    try {
+      await enqueueDocument(client, doc.id);
+      await load();
+    } catch {
+      setError('We could not start processing. Please try again.');
     } finally {
       setBusyId(null);
     }
@@ -172,7 +198,7 @@ export function MaterialsScreen({ courseId }: { courseId: string }) {
                   <Text
                     style={[styles.status, doc.processing_status === 'failed' && styles.failed]}
                   >
-                    {PROCESSING_STATUS_LABELS[doc.processing_status]}
+                    {statusLabelFor(doc)}
                   </Text>
                 </Pressable>
 
@@ -183,17 +209,29 @@ export function MaterialsScreen({ courseId }: { courseId: string }) {
                     <Text style={styles.meta}>
                       Uploaded: {formatInZone(doc.created_at, timezone)}
                     </Text>
-                    <Text style={styles.meta}>
-                      Status: {PROCESSING_STATUS_LABELS[doc.processing_status]}
-                    </Text>
+                    <Text style={styles.meta}>Status: {statusLabelFor(doc)}</Text>
                     {doc.error_message ? (
                       <Text style={styles.failed}>{doc.error_message}</Text>
                     ) : null}
                     <View style={styles.detailActions}>
-                      {doc.storage_key && doc.processing_status !== 'failed' ? (
+                      {doc.storage_key ? (
                         <SecondaryButton label="Open" onPress={() => onOpen(doc)} />
                       ) : null}
-                      {doc.processing_status === 'failed' ? (
+                      {doc.processing_status === 'uploaded' ? (
+                        <SecondaryButton
+                          label="Process"
+                          disabled={busyId !== null}
+                          onPress={() => onProcess(doc)}
+                        />
+                      ) : null}
+                      {doc.processing_status === 'failed' && doc.storage_key ? (
+                        <SecondaryButton
+                          label="Try processing again"
+                          disabled={busyId !== null}
+                          onPress={() => onProcess(doc)}
+                        />
+                      ) : null}
+                      {doc.processing_status === 'failed' && !doc.storage_key ? (
                         <SecondaryButton
                           label="Try again"
                           disabled={busyId !== null}

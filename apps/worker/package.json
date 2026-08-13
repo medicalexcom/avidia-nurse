@@ -1,0 +1,28 @@
+{
+  "name": "@avidia/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background document-processing worker: claims QUEUED documents, downloads the private stored object with server-side credentials, extracts and normalizes content via @avidia/ingestion, and atomically persists provenance-preserving sections. Runs server-side only — never in the client bundle.",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "start": "tsx src/index.ts",
+    "start:once": "tsx src/index.ts --once"
+  },
+  "dependencies": {
+    "@avidia/domain": "workspace:*",
+    "@avidia/ingestion": "workspace:*",
+    "@supabase/supabase-js": "^2.112.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.2",
+    "jest": "^29.7.0",
+    "tsx": "^4.19.2",
+    "typescript": "~6.0.3"
+  }
+}

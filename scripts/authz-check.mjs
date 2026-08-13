@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Authorization / RLS verification for profiles (M1), courses/modules/
- * exams/exam_modules (M2), and documents + course-materials storage (M3).
+ * exams/exam_modules (M2), documents + course-materials storage (M3), and
+ * document processing + document_sections (M4).
  *
  * Runs against a REAL Supabase project (never in the client bundle). Requires:
  *   SUPABASE_URL                — project URL
@@ -38,6 +39,15 @@
  *       delete and anonymous access, even with the exact object path.
  *   18. Course deletion cascades to modules, exams, links AND documents, but
  *       never the profile.
+ *
+ * M4 checks (spec T security / U):
+ *   19. Owner can enqueue their own document (uploaded -> queued); the
+ *       trigger blocks clients from entering 'processing' or 'ready'.
+ *   20. Only the service role can call replace_document_sections; clients
+ *       cannot insert/update/delete document_sections directly.
+ *   21. Owner reads own sections; cross-user section reads return nothing.
+ *   22. Deleting the course cascades to document_sections (derived content
+ *       never outlives its document).
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -381,6 +391,101 @@ try {
   const stillThere = await admin.storage.from('course-materials').download(objectKey);
   check('object survived the attack attempts (admin check)', !stillThere.error);
 
+  // -------------------------------------------------------------------------
+  // M4 checks (spec T/U): processing state machine + document_sections.
+  // -------------------------------------------------------------------------
+
+  // 19. Owner may request processing (uploaded -> queued), but the trigger
+  // reserves 'processing' and 'ready' for the service-role worker.
+  const enqueue = await a.client
+    .from('documents')
+    .update({ processing_status: 'queued' })
+    .eq('id', docId)
+    .select()
+    .single();
+  check(
+    'owner can enqueue own document (uploaded -> queued)',
+    !enqueue.error && enqueue.data?.processing_status === 'queued',
+    enqueue.error?.message
+  );
+  const fakeReady = await a.client
+    .from('documents')
+    .update({ processing_status: 'ready' })
+    .eq('id', docId);
+  check('client cannot mark a document ready', Boolean(fakeReady.error));
+  const fakeProcessing = await a.client
+    .from('documents')
+    .update({ processing_status: 'processing' })
+    .eq('id', docId);
+  check("client cannot claim 'processing' status", Boolean(fakeProcessing.error));
+
+  // 20. Sections are written ONLY through the service-role RPC.
+  const seeded = await admin.rpc('replace_document_sections', {
+    p_document_id: docId,
+    p_sections: [
+      {
+        section_type: 'paragraph',
+        sequence: 0,
+        page_number: null,
+        slide_number: null,
+        heading: null,
+        content: 'Authz section content.',
+        metadata: null,
+      },
+    ],
+  });
+  check(
+    'service role replaces sections via RPC',
+    !seeded.error && seeded.data === 1,
+    seeded.error?.message
+  );
+  const clientRpc = await a.client.rpc('replace_document_sections', {
+    p_document_id: docId,
+    p_sections: [],
+  });
+  check('authenticated client cannot call replace_document_sections', Boolean(clientRpc.error));
+  const sectionIns = await a.client.from('document_sections').insert({
+    document_id: docId,
+    section_type: 'paragraph',
+    sequence: 1,
+    content: 'forged section',
+  });
+  check('client cannot insert document_sections directly', Boolean(sectionIns.error));
+  const sectionUpd = await a.client
+    .from('document_sections')
+    .update({ content: 'tampered' })
+    .eq('document_id', docId)
+    .select();
+  check(
+    'client cannot update document_sections',
+    Boolean(sectionUpd.error) || (sectionUpd.data ?? []).length === 0
+  );
+  const sectionDel = await a.client
+    .from('document_sections')
+    .delete()
+    .eq('document_id', docId)
+    .select();
+  check(
+    'client cannot delete document_sections',
+    Boolean(sectionDel.error) || (sectionDel.data ?? []).length === 0
+  );
+
+  // 21. Owner reads own sections; cross-user reads return nothing.
+  const ownSections = await a.client.from('document_sections').select('*').eq('document_id', docId);
+  check(
+    'owner reads own document sections',
+    (ownSections.data ?? []).length === 1 &&
+      ownSections.data?.[0]?.content === 'Authz section content.',
+    ownSections.error?.message
+  );
+  const bSections = await b.client.from('document_sections').select('*').eq('document_id', docId);
+  check("user cannot read another user's sections", (bSections.data ?? []).length === 0);
+  const anonSections = await userClient()
+    .from('document_sections')
+    .select('*')
+    .eq('document_id', docId);
+  check('anonymous client reads no sections', (anonSections.data ?? []).length === 0);
+
   // 18. Deleting a course cascades to its modules/exams/links/documents but
   // never touches the profile. (The app removes storage objects before the
   // course row — SQL cannot cascade into storage, so we clean up here.)
@@ -390,12 +495,18 @@ try {
   const orphanExams = await admin.from('exams').select('id').eq('course_id', courseId);
   const orphanLinks = await admin.from('exam_modules').select('exam_id').eq('exam_id', examId);
   const orphanDocs = await admin.from('documents').select('id').eq('course_id', courseId);
+  // 22. Derived content (document_sections) must also be gone.
+  const orphanSections = await admin
+    .from('document_sections')
+    .select('id')
+    .eq('document_id', docId);
   check(
-    'course delete cascades to modules, exams, exam_modules and documents',
+    'course delete cascades to modules, exams, exam_modules, documents and sections',
     (orphanModules.data ?? []).length === 0 &&
       (orphanExams.data ?? []).length === 0 &&
       (orphanLinks.data ?? []).length === 0 &&
-      (orphanDocs.data ?? []).length === 0
+      (orphanDocs.data ?? []).length === 0 &&
+      (orphanSections.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

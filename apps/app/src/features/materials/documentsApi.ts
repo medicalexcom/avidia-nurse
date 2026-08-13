@@ -91,6 +91,20 @@ export async function markDocumentFailed(
   if (error) throw error;
 }
 
+/**
+ * Ask the worker to process (or re-process) a document. Legal transitions
+ * only: uploaded -> queued and failed -> queued (the database trigger rejects
+ * anything else, and only the service-role worker may move a document into
+ * 'processing' or 'ready').
+ */
+export async function enqueueDocument(client: SupabaseClient, documentId: string): Promise<void> {
+  const { error } = await client
+    .from('documents')
+    .update({ processing_status: 'queued', error_message: null })
+    .eq('id', documentId);
+  if (error) throw error;
+}
+
 export async function updateDocumentType(
   client: SupabaseClient,
   documentId: string,

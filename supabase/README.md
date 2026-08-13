@@ -9,17 +9,40 @@ and `functions/` arrive with the milestones that give them real content.
 1. Create a project at [supabase.com](https://supabase.com) (free tier is fine for development).
 2. In the SQL Editor, run each file in `migrations/` in filename order
    (`0001_user_profiles.sql`, `0002_courses_modules_exams.sql`,
-   `0003_documents_and_storage.sql`). Alternatively, with the Supabase CLI:
+   `0003_documents_and_storage.sql`, `0004_document_sections_and_processing.sql`).
+   Alternatively, with the Supabase CLI:
    `supabase link --project-ref <ref>` then `supabase db push`.
    Migration `0003` also creates the private `course-materials` storage bucket
    (50 MB per-file limit, supported MIME types only) and its storage policies —
-   no manual bucket setup in the dashboard is needed.
+   no manual bucket setup in the dashboard is needed. Migration `0004` adds the
+   `document_sections` table, the processing state-machine trigger, and the
+   service-role-only `replace_document_sections` function used by the worker.
 3. Copy the project URL and anon key from **Project Settings → API** into your
    local `.env` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`
    (see `.env.example`).
 4. Optional for development speed: in **Authentication → Providers → Email**,
    you may disable "Confirm email" so new sign-ups can sign in immediately.
    Keep it enabled for production.
+
+## Running the document-processing worker (M4)
+
+The background worker extracts uploaded materials into `document_sections`.
+It needs the project URL and the **service-role key** (Project Settings → API)
+as server-side environment variables — these are secrets: never in `.env`
+files that could be committed, never in any `EXPO_PUBLIC_*` variable, never
+in client code.
+
+```bash
+export SUPABASE_URL=https://<ref>.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=<service role key>
+
+pnpm --filter @avidia/worker start        # poll loop (every 5 seconds)
+pnpm --filter @avidia/worker start:once   # drain the queue once, then exit
+```
+
+The worker only performs legal state-machine transitions (a database trigger
+reserves `processing`/`ready` for the service role) and logs document ids and
+statuses only — never file content or credentials.
 
 ## Verifying authorization (RLS)
 
@@ -33,7 +56,10 @@ pnpm run test:authz
 
 This creates two throwaway users and verifies every ownership rule from M1
 (profiles), M2 (courses/modules/exams/exam_modules, including cross-user and
-cross-course link denial and cascade behavior), and M3 (documents and the
+cross-course link denial and cascade behavior), M3 (documents and the
 `course-materials` bucket: cross-user upload/download/list/replace/delete all
 denied, forged storage keys rejected by the database, anonymous access denied),
-then deletes the users and any test objects.
+and M4 (processing + sections: owners can enqueue but cannot enter
+`processing`/`ready`; only the service role can write `document_sections`;
+cross-user and anonymous section reads return nothing; course deletion
+cascades to sections), then deletes the users and any test objects.

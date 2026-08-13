@@ -43,6 +43,11 @@ jobs:
           EXPO_BASE_URL: /avidia-nurse
           EXPO_PUBLIC_APP_ENV: preview
 
+      - name: Add SPA fallback for client-side routes
+        # GitHub Pages serves 404.html for unknown paths; serving the app shell
+        # there lets expo-router handle deep links like /sign-in on refresh.
+        run: cp apps/app/dist/index.html apps/app/dist/404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

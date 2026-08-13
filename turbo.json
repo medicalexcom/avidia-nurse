@@ -8,7 +8,12 @@
       "dependsOn": ["^test"]
     },
     "build:web": {
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      // Turborepo runs tasks in strict env mode: variables not listed here are
+      // hidden from the task and excluded from the cache key. The web build's
+      // output depends on these (base URL for sub-path hosting such as GitHub
+      // Pages, and all EXPO_PUBLIC_* values embedded in the client bundle).
+      "env": ["EXPO_BASE_URL", "EXPO_PUBLIC_*"]
     }
   }
 }

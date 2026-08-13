@@ -92,6 +92,7 @@ const uploadedDoc: DocumentRow = {
   document_type: 'lecture',
   processing_status: 'uploaded',
   index_status: 'pending',
+  knowledge_status: 'pending',
   error_message: null,
   content_hash: 'a'.repeat(64),
   created_at: '2026-08-10T15:00:00.000Z',

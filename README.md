@@ -5,16 +5,18 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M5 — Semantic Retrieval and RAG Foundation.** Extracted materials are now
-chunked along their structure (slides, pages, headings, tables — never blind character windows),
-embedded (OpenAI `text-embedding-3-small`, provider-agnostic seam), and stored in Postgres with
-pgvector. Retrieval is hybrid (vector cosine + full-text, fused by reciprocal-rank fusion) and
-course-scoped **inside the database**: a user can only ever search their own course's chunks, and
-raw vectors never reach clients. Every chunk keeps usable provenance ("Adult Health Module 3 —
-slide 17"), and a grounding-context builder produces the labeled, citable source blocks that the
-future AI answering milestone (M10) will consume. No text-generation AI is used yet; ontology and
-concept maps are deferred. AI study tools and analytics arrive in later milestones and are
-clearly marked as placeholders in the app.
+**Current milestone: M6 — Nursing Concept and Knowledge Model.** Indexed materials now flow
+through AI concept extraction (OpenAI `gpt-4o-mini` behind a provider-independent gateway,
+strict JSON-schema output, versioned prompts, one controlled repair round) into a **course-scoped**
+knowledge model: typed nursing concepts (diseases, medications, labs, assessments, interventions…),
+first-class aliases (DKA → Diabetic Ketoacidosis), normalized concept↔chunk provenance with no
+copied text, and evidence-bound relationships ("Furosemide _may cause_ Hypokalemia" — every edge
+cites the exact chunk that says so). Dedup is deterministic-first (hyperkalemia can never merge
+with hypokalemia), a content/version fingerprint means unchanged material never re-bills the AI,
+and reprocessing or deletion can never leave stale knowledge behind. Students get a restrained
+concepts view showing exactly what was identified and _where_ ("Module 2 Electrolytes.pdf —
+slide 18"), with a transparent emphasis signal ("found in 4 places in your materials") — never an
+exam prediction. Quizzes, mastery, spaced repetition and generation remain later milestones.
 
 ## Repository structure
 
@@ -27,17 +29,22 @@ avidia-nurse/
 │   │   └── src/
 │   │       ├── config/     # Validated environment configuration
 │   │       ├── lib/        # Supabase client (session persistence, token refresh)
-│   │       ├── features/   # auth, profile, courses, materials (upload/storage/screens)
+│   │       ├── features/   # auth, profile, courses, materials, concepts (with evidence)
 │   │       └── ui/         # Theme, shared components, responsive navigation shell
 │   └── worker/             # Background worker (service role, Node/tsx): extracts queued
-│                           # documents into sections, then chunks + embeds ready documents
-│                           # into source_chunks; includes the internal retrieval CLI
+│                           # documents into sections, chunks + embeds ready documents into
+│                           # source_chunks, then extracts nursing concepts into the course
+│                           # knowledge model; includes the internal retrieval CLI
 ├── packages/
 │   ├── config/             # Platform-agnostic shared configuration (no React, no LLM deps)
 │   ├── domain/             # Pure domain logic: validation, timezone-safe time math, exam
-│   │                       # countdowns, section/provenance model and state machines
+│   │                       # countdowns, section/provenance model, concept taxonomy and
+│   │                       # state machines
 │   ├── ingestion/          # Deterministic PDF/PPTX/DOCX/TXT extraction (no AI, no network)
 │   │                       # plus in-memory test-fixture builders
+│   ├── knowledge/          # Concept extraction: normalization/dedup, strict schema
+│   │                       # validation, provider-agnostic AI gateway, refinement,
+│   │                       # fingerprint cost gate, batching, nursing eval fixtures
 │   └── rag/                # Semantic chunking, embedding providers (provider-agnostic),
 │                           # course-scoped retriever, grounding-context builder, eval set
 ├── docs/

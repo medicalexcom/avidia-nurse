@@ -58,6 +58,21 @@
  *   26. search_course_chunks works for the owner, raises for another user's
  *       course, and is denied to anonymous callers.
  *   27. Deleting the course cascades to source_chunks (no orphan vectors).
+ *
+ * M6 checks (spec R/X): concepts + knowledge model.
+ *   28. Only the service role can call apply_concept_extraction and
+ *       recompute_concept_emphasis; both are denied to clients and anon.
+ *   29. Owner reads own concepts, aliases, provenance links and
+ *       relationships; the evidence trail is visible (spec Q).
+ *   30. User B and anonymous clients read NOTHING from any concept table,
+ *       even with the exact guessed ids (spec R).
+ *   31. Clients cannot insert/update/delete concepts, concept_aliases,
+ *       concept_sources or concept_relationships directly — the knowledge
+ *       model is written only by the pipeline.
+ *   32. Deleting a document removes its provenance links and prunes AI
+ *       concepts left with no supporting source (spec M/O).
+ *   33. Deleting the course cascades to all four concept tables — no
+ *       knowledge outlives the course it came from (spec A).
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -621,6 +636,277 @@ try {
   });
   check('search RPC is denied to anonymous callers', Boolean(anonSearch.error));
 
+  // -------------------------------------------------------------------------
+  // M6 checks (spec R/X): concepts + knowledge model.
+  // -------------------------------------------------------------------------
+
+  // 28. Concept writes happen ONLY through the service-role RPCs.
+  const conceptSeed = await admin.rpc('apply_concept_extraction', {
+    p_document_id: docId,
+    p_payload: {
+      extraction: {
+        provider: 'authz',
+        model: 'authz-test',
+        prompt_version: 'p1',
+        extraction_version: 'v1',
+      },
+      concepts: [
+        {
+          key: 'furosemide',
+          name: 'Furosemide',
+          type: 'medication',
+          summary: 'Loop diuretic used in the authz fixture.',
+          aliases: [{ alias: 'Lasix', key: 'lasix' }],
+          chunk_ids: [chunkId],
+        },
+        {
+          key: 'hypokalemia',
+          name: 'Hypokalemia',
+          type: 'laboratory',
+          summary: 'Low serum potassium.',
+          aliases: [],
+          chunk_ids: [chunkId],
+        },
+      ],
+      relationships: [
+        {
+          source_key: 'furosemide',
+          target_key: 'hypokalemia',
+          type: 'may_cause',
+          chunk_id: chunkId,
+        },
+      ],
+    },
+  });
+  check(
+    'service role applies concept extraction via RPC',
+    !conceptSeed.error &&
+      conceptSeed.data?.new_concepts === 2 &&
+      conceptSeed.data?.links === 2 &&
+      conceptSeed.data?.relationships === 1,
+    conceptSeed.error?.message ?? JSON.stringify(conceptSeed.data)
+  );
+  const emphasisSeed = await admin.rpc('recompute_concept_emphasis', {
+    p_course_id: courseId,
+  });
+  check(
+    'service role recomputes concept emphasis via RPC',
+    !emphasisSeed.error,
+    emphasisSeed.error?.message
+  );
+  const clientApplyRpc = await a.client.rpc('apply_concept_extraction', {
+    p_document_id: docId,
+    p_payload: { extraction: {}, concepts: [], relationships: [] },
+  });
+  check('authenticated client cannot call apply_concept_extraction', Boolean(clientApplyRpc.error));
+  const anonApplyRpc = await userClient().rpc('apply_concept_extraction', {
+    p_document_id: docId,
+    p_payload: { extraction: {}, concepts: [], relationships: [] },
+  });
+  check('anonymous client cannot call apply_concept_extraction', Boolean(anonApplyRpc.error));
+  const clientEmphasisRpc = await a.client.rpc('recompute_concept_emphasis', {
+    p_course_id: courseId,
+  });
+  check(
+    'authenticated client cannot call recompute_concept_emphasis',
+    Boolean(clientEmphasisRpc.error)
+  );
+
+  // 29. Owner sees the concepts WITH their evidence trail (spec Q).
+  const ownConcepts = await a.client
+    .from('concepts')
+    .select('id, canonical_name, concept_type, emphasis_score')
+    .eq('course_id', courseId)
+    .order('canonical_name');
+  check(
+    'owner reads own course concepts',
+    (ownConcepts.data ?? []).length === 2 &&
+      ownConcepts.data?.[0]?.canonical_name === 'Furosemide' &&
+      ownConcepts.data?.[1]?.canonical_name === 'Hypokalemia',
+    ownConcepts.error?.message
+  );
+  const furosemideId = ownConcepts.data?.[0]?.id;
+  const hypokalemiaId = ownConcepts.data?.[1]?.id;
+  const ownAliases = await a.client
+    .from('concept_aliases')
+    .select('alias')
+    .eq('concept_id', furosemideId);
+  check(
+    'owner reads own concept aliases (Lasix)',
+    (ownAliases.data ?? []).length === 1 && ownAliases.data?.[0]?.alias === 'Lasix',
+    ownAliases.error?.message
+  );
+  const ownLinks = await a.client
+    .from('concept_sources')
+    .select('concept_id, chunk_id')
+    .eq('document_id', docId);
+  check('owner reads own concept provenance links', (ownLinks.data ?? []).length === 2);
+  const ownRels = await a.client
+    .from('concept_relationships')
+    .select('relationship_type, source_concept_id, target_concept_id')
+    .eq('course_id', courseId);
+  check(
+    'owner reads own concept relationships with provenance',
+    (ownRels.data ?? []).length === 1 &&
+      ownRels.data?.[0]?.relationship_type === 'may_cause' &&
+      ownRels.data?.[0]?.source_concept_id === furosemideId &&
+      ownRels.data?.[0]?.target_concept_id === hypokalemiaId,
+    ownRels.error?.message
+  );
+  // 30. Cross-user and anonymous reads return nothing, even by exact id
+  // (spec R — a guessed id is indistinguishable from a nonexistent one).
+  const bConcept = await b.client.from('concepts').select('id').eq('id', furosemideId);
+  check(
+    "user cannot read another user's concepts by guessed id",
+    (bConcept.data ?? []).length === 0
+  );
+  const bAlias = await b.client.from('concept_aliases').select('id').eq('concept_id', furosemideId);
+  check("user cannot read another user's concept aliases", (bAlias.data ?? []).length === 0);
+  const bLinks = await b.client.from('concept_sources').select('id').eq('document_id', docId);
+  check("user cannot read another user's concept sources", (bLinks.data ?? []).length === 0);
+  const bRels = await b.client.from('concept_relationships').select('id').eq('course_id', courseId);
+  check("user cannot read another user's concept relationships", (bRels.data ?? []).length === 0);
+  const anonConcept = await userClient().from('concepts').select('id').eq('id', furosemideId);
+  check('anonymous client reads no concepts', (anonConcept.data ?? []).length === 0);
+
+  // 31. Concept tables reject direct client writes — even from the owner.
+  const conceptIns = await a.client.from('concepts').insert({
+    course_id: courseId,
+    canonical_name: 'Forged Concept',
+    normalized_key: 'forged concept',
+    concept_type: 'other',
+    extraction_version: 'v1',
+  });
+  check('client cannot insert concepts directly', Boolean(conceptIns.error));
+  const conceptUpd = await a.client
+    .from('concepts')
+    .update({ canonical_name: 'Tampered' })
+    .eq('id', furosemideId)
+    .select('id');
+  check(
+    'client cannot update concepts',
+    Boolean(conceptUpd.error) || (conceptUpd.data ?? []).length === 0
+  );
+  const conceptDel = await a.client.from('concepts').delete().eq('id', furosemideId).select('id');
+  check(
+    'client cannot delete concepts',
+    Boolean(conceptDel.error) || (conceptDel.data ?? []).length === 0
+  );
+  const aliasIns = await a.client.from('concept_aliases').insert({
+    concept_id: furosemideId,
+    course_id: courseId,
+    alias: 'Forged Alias',
+    normalized_alias: 'forged alias',
+  });
+  check('client cannot insert concept_aliases directly', Boolean(aliasIns.error));
+  const conceptLinkIns = await a.client.from('concept_sources').insert({
+    concept_id: furosemideId,
+    chunk_id: chunkId,
+    course_id: courseId,
+    document_id: docId,
+    extraction_version: 'v1',
+  });
+  check('client cannot insert concept_sources directly', Boolean(conceptLinkIns.error));
+  const relIns = await a.client.from('concept_relationships').insert({
+    course_id: courseId,
+    source_concept_id: furosemideId,
+    target_concept_id: hypokalemiaId,
+    relationship_type: 'treats',
+    chunk_id: chunkId,
+  });
+  check('client cannot insert concept_relationships directly', Boolean(relIns.error));
+
+  // 32. Deleting a document removes its provenance links and prunes AI
+  // concepts left without any supporting source (spec M/O). Uses a SECOND
+  // document so the course-cascade check below keeps its fixtures.
+  const doc2Ins = await admin
+    .from('documents')
+    .insert({
+      course_id: courseId,
+      uploaded_by: a.id,
+      filename: 'authz-test-2.txt',
+      original_filename: 'authz-test-2.txt',
+      mime_type: 'text/plain',
+      file_extension: 'txt',
+      file_size: 20,
+      document_type: 'notes',
+      content_hash: null,
+    })
+    .select()
+    .single();
+  const doc2Id = doc2Ins.data?.id;
+  await admin.rpc('replace_source_chunks', {
+    p_document_id: doc2Id,
+    p_chunks: [
+      {
+        ordinal: 0,
+        content: 'Authz chunk two: docusate is a stool softener.',
+        token_estimate: 12,
+        source_locator: { type: 'txt', sectionIndex: 0 },
+        section_start: 0,
+        section_end: 0,
+        embedding: unitVector,
+        embedding_provider: 'authz',
+        embedding_model: 'authz-test',
+        embedding_version: 'v1',
+      },
+    ],
+  });
+  const doc2Chunk = await admin
+    .from('source_chunks')
+    .select('id')
+    .eq('document_id', doc2Id)
+    .single();
+  const doc2Seed = await admin.rpc('apply_concept_extraction', {
+    p_document_id: doc2Id,
+    p_payload: {
+      extraction: {
+        provider: 'authz',
+        model: 'authz-test',
+        prompt_version: 'p1',
+        extraction_version: 'v1',
+      },
+      concepts: [
+        {
+          key: 'docusate',
+          name: 'Docusate',
+          type: 'medication',
+          summary: 'Stool softener (second-document fixture).',
+          aliases: [],
+          chunk_ids: [doc2Chunk.data?.id],
+        },
+      ],
+      relationships: [],
+    },
+  });
+  const docusateId = await admin
+    .from('concepts')
+    .select('id')
+    .eq('course_id', courseId)
+    .eq('normalized_key', 'docusate')
+    .maybeSingle();
+  check(
+    'second document seeded with its own AI concept',
+    !doc2Seed.error && Boolean(docusateId.data?.id),
+    doc2Seed.error?.message
+  );
+  const doc2Del = await a.client.from('documents').delete().eq('id', doc2Id).select();
+  check('owner deletes the second document', (doc2Del.data ?? []).length === 1);
+  const doc2Links = await admin.from('concept_sources').select('id').eq('document_id', doc2Id);
+  const docusateAfter = await admin
+    .from('concepts')
+    .select('id')
+    .eq('id', docusateId.data?.id ?? '00000000-0000-0000-0000-000000000000');
+  check(
+    'document delete removes its concept links and prunes the orphan AI concept',
+    (doc2Links.data ?? []).length === 0 && (docusateAfter.data ?? []).length === 0
+  );
+  const survivors = await admin.from('concepts').select('id').eq('course_id', courseId);
+  check(
+    'concepts supported by the remaining document survive the prune',
+    (survivors.data ?? []).length === 2
+  );
+
   // 18. Deleting a course cascades to its modules/exams/links/documents but
   // never touches the profile. (The app removes storage objects before the
   // course row — SQL cannot cascade into storage, so we clean up here.)
@@ -637,14 +923,30 @@ try {
     .select('id')
     .eq('document_id', docId);
   const orphanChunks = await admin.from('source_chunks').select('id').eq('document_id', docId);
+  // 33. The knowledge model (concepts, aliases, sources, relationships) must
+  // also be gone — no knowledge outlives the course it came from (spec A).
+  const orphanConcepts = await admin.from('concepts').select('id').eq('course_id', courseId);
+  const orphanAliases = await admin.from('concept_aliases').select('id').eq('course_id', courseId);
+  const orphanConceptSources = await admin
+    .from('concept_sources')
+    .select('id')
+    .eq('course_id', courseId);
+  const orphanRelationships = await admin
+    .from('concept_relationships')
+    .select('id')
+    .eq('course_id', courseId);
   check(
-    'course delete cascades to modules, exams, exam_modules, documents, sections and chunks',
+    'course delete cascades to modules, exams, exam_modules, documents, sections, chunks and concepts',
     (orphanModules.data ?? []).length === 0 &&
       (orphanExams.data ?? []).length === 0 &&
       (orphanLinks.data ?? []).length === 0 &&
       (orphanDocs.data ?? []).length === 0 &&
       (orphanSections.data ?? []).length === 0 &&
-      (orphanChunks.data ?? []).length === 0
+      (orphanChunks.data ?? []).length === 0 &&
+      (orphanConcepts.data ?? []).length === 0 &&
+      (orphanAliases.data ?? []).length === 0 &&
+      (orphanConceptSources.data ?? []).length === 0 &&
+      (orphanRelationships.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

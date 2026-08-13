@@ -114,6 +114,11 @@ export function createSupabaseIndexerClient(
           index_status: 'indexed',
           index_detail: null,
           indexed_at: new Date().toISOString(),
+          // Chunks just changed, so previously extracted concept evidence is
+          // out of date: queue the M6 knowledge stage to re-derive it
+          // (spec O — never leave stale concept-source links silently active).
+          knowledge_status: 'pending',
+          knowledge_detail: null,
         })
         .eq('id', documentId)
         .eq('index_status', 'indexing');

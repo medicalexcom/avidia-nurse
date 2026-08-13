@@ -14,6 +14,7 @@
   "dependencies": {
     "@avidia/domain": "workspace:*",
     "@avidia/ingestion": "workspace:*",
+    "@avidia/knowledge": "workspace:*",
     "@avidia/rag": "workspace:*",
     "@supabase/supabase-js": "^2.112.3"
   },

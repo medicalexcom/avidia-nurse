@@ -1,9 +1,20 @@
+import {
+  ConceptExtractionProvider,
+  createConceptExtractionProviderFromEnv,
+} from '@avidia/knowledge';
 import { createEmbeddingProviderFromEnv, EmbeddingProvider } from '@avidia/rag';
 
 import { drainIndexQueue, indexNextDocument, IndexerClient, STALE_INDEXING_MS } from './indexer';
+import {
+  drainKnowledgeQueue,
+  extractNextDocument,
+  KnowledgeClient,
+  STALE_KNOWLEDGE_MS,
+} from './knowledge';
 import { drainQueue, processNextDocument, STALE_PROCESSING_MS, WorkerClient } from './processor';
 import { parseSearchArgs, runSearch } from './searchCli';
 import { createSupabaseIndexerClient } from './supabaseIndexerClient';
+import { createSupabaseKnowledgeClient } from './supabaseKnowledgeClient';
 import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWorkerClient';
 
 /**
@@ -14,9 +25,10 @@ import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWor
  *   pnpm --filter @avidia/worker search -- --course <uuid> --query "..."
  *                                               internal retrieval inspector
  *
- * Each cycle runs the M4 extraction stage (queued → ready) and then the M5
- * indexing stage (ready + pending → indexed), so an upload flows to
- * retrieval-ready without operator action.
+ * Each cycle runs the M4 extraction stage (queued → ready), the M5 indexing
+ * stage (ready + pending → indexed), and the M6 concept-extraction stage
+ * (indexed + pending → knowledge ready), so an upload flows to
+ * retrieval-and-knowledge-ready without operator action.
  *
  * Logging policy (spec O): document ids, statuses, and counts only — never
  * file content, storage keys, tokens, or credentials.
@@ -28,7 +40,11 @@ function log(message: string): void {
   console.log(`[worker ${new Date().toISOString()}] ${message}`);
 }
 
-async function sweepStale(client: WorkerClient, indexer: IndexerClient): Promise<void> {
+async function sweepStale(
+  client: WorkerClient,
+  indexer: IndexerClient,
+  knowledge: KnowledgeClient
+): Promise<void> {
   const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const recovered = await client.recoverStaleProcessing(staleBefore);
   if (recovered > 0) {
@@ -39,14 +55,21 @@ async function sweepStale(client: WorkerClient, indexer: IndexerClient): Promise
   if (requeued > 0) {
     log(`requeued ${requeued} stale indexing document(s)`);
   }
+  const staleKnowledgeBefore = new Date(Date.now() - STALE_KNOWLEDGE_MS).toISOString();
+  const reExtract = await knowledge.recoverStaleKnowledge(staleKnowledgeBefore);
+  if (reExtract > 0) {
+    log(`requeued ${reExtract} stale concept-extraction document(s)`);
+  }
 }
 
 async function runOnce(
   client: WorkerClient,
   indexer: IndexerClient,
-  embeddings: EmbeddingProvider
+  embeddings: EmbeddingProvider,
+  knowledge: KnowledgeClient,
+  concepts: ConceptExtractionProvider
 ): Promise<void> {
-  await sweepStale(client, indexer);
+  await sweepStale(client, indexer, knowledge);
   const outcomes = await drainQueue(client);
   for (const outcome of outcomes) {
     if (outcome.status === 'ready') {
@@ -68,19 +91,39 @@ async function runOnce(
     }
   }
   log(`drained index queue: ${indexed.length} document(s) indexed`);
+  const extracted = await drainKnowledgeQueue(knowledge, concepts);
+  for (const outcome of extracted) {
+    if (outcome.status === 'extracted') {
+      log(
+        `document ${outcome.documentId} knowledge ready ` +
+          `(${outcome.concepts} new concepts, ${outcome.links} links, ` +
+          `${outcome.relationships} relationships)`
+      );
+    } else if (outcome.status === 'skipped') {
+      log(`document ${outcome.documentId} knowledge unchanged (fingerprint match, no AI call)`);
+    } else if (outcome.status === 'failed') {
+      log(`document ${outcome.documentId} concept extraction failed`);
+    }
+  }
+  log(`drained knowledge queue: ${extracted.length} document(s) extracted`);
 }
 
 async function runLoop(
   client: WorkerClient,
   indexer: IndexerClient,
-  embeddings: EmbeddingProvider
+  embeddings: EmbeddingProvider,
+  knowledge: KnowledgeClient,
+  concepts: ConceptExtractionProvider
 ): Promise<never> {
   log(`polling every ${POLL_INTERVAL_MS / 1000}s`);
   let lastSweep = 0;
   for (;;) {
     try {
-      if (Date.now() - lastSweep > Math.min(STALE_PROCESSING_MS, STALE_INDEXING_MS)) {
-        await sweepStale(client, indexer);
+      if (
+        Date.now() - lastSweep >
+        Math.min(STALE_PROCESSING_MS, STALE_INDEXING_MS, STALE_KNOWLEDGE_MS)
+      ) {
+        await sweepStale(client, indexer, knowledge);
         lastSweep = Date.now();
       }
       const outcome = await processNextDocument(client);
@@ -104,6 +147,26 @@ async function runLoop(
         log(`document ${indexOutcome.documentId} indexing failed`);
         continue;
       }
+      const knowledgeOutcome = await extractNextDocument(knowledge, concepts);
+      if (knowledgeOutcome.status === 'extracted') {
+        log(
+          `document ${knowledgeOutcome.documentId} knowledge ready ` +
+            `(${knowledgeOutcome.concepts} new concepts, ${knowledgeOutcome.links} links, ` +
+            `${knowledgeOutcome.relationships} relationships)`
+        );
+        continue;
+      }
+      if (knowledgeOutcome.status === 'skipped') {
+        log(
+          `document ${knowledgeOutcome.documentId} knowledge unchanged ` +
+            '(fingerprint match, no AI call)'
+        );
+        continue;
+      }
+      if (knowledgeOutcome.status === 'failed') {
+        log(`document ${knowledgeOutcome.documentId} concept extraction failed`);
+        continue;
+      }
     } catch (error) {
       log(`worker error: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -122,11 +185,13 @@ async function main(): Promise<void> {
 
   const client = createSupabaseWorkerClient(supabase);
   const indexer = createSupabaseIndexerClient(supabase, embeddings);
+  const knowledge = createSupabaseKnowledgeClient(supabase);
+  const concepts = createConceptExtractionProviderFromEnv(process.env);
   if (process.argv.includes('--once')) {
-    await runOnce(client, indexer, embeddings);
+    await runOnce(client, indexer, embeddings, knowledge, concepts);
     return;
   }
-  await runLoop(client, indexer, embeddings);
+  await runLoop(client, indexer, embeddings, knowledge, concepts);
 }
 
 main().catch((error) => {

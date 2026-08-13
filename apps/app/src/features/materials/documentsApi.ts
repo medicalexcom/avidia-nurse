@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   DocumentType,
   IndexStatus,
+  KnowledgeStatus,
   MaterialExtension,
   ProcessingStatus,
 } from '@avidia/domain';
@@ -30,6 +31,8 @@ export interface DocumentRow {
   processing_status: ProcessingStatus;
   /** M5 semantic-indexing lifecycle; drives the "Ready to study" label. */
   index_status: IndexStatus;
+  /** M6 concept-extraction lifecycle (internal; failures never block reading). */
+  knowledge_status: KnowledgeStatus;
   error_message: string | null;
   content_hash: string | null;
   created_at: string;

@@ -5,10 +5,12 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M2 — Courses, Modules, and Exams.** On top of the M1 authentication and
-app shell, students can now create courses, organize modules, schedule exams with weights and
-module coverage, and see timezone-correct exam countdowns. AI study tools and analytics arrive
-in later milestones and are clearly marked as placeholders in the app.
+**Current milestone: M3 — Course Material Upload and Storage.** On top of the M2 course
+structure, students can now upload course materials (PDF, PPTX, DOCX, TXT) or paste notes into
+their courses. Files live in a private Supabase Storage bucket behind per-student policies, with
+short-lived signed-URL access, duplicate detection, retry for failed uploads, and safe deletion.
+Materials rest at status `uploaded` — ingestion/extraction begins in M4. AI study tools and
+analytics arrive in later milestones and are clearly marked as placeholders in the app.
 
 ## Repository structure
 
@@ -21,7 +23,7 @@ avidia-nurse/
 │       └── src/
 │           ├── config/     # Validated environment configuration
 │           ├── lib/        # Supabase client (session persistence, token refresh)
-│           ├── features/   # auth (provider, guards, errors), profile, courses (data + screens)
+│           ├── features/   # auth, profile, courses, materials (upload/storage/screens)
 │           └── ui/         # Theme, shared components, responsive navigation shell
 ├── packages/
 │   ├── config/             # Platform-agnostic shared configuration (no React, no LLM deps)

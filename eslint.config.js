@@ -54,7 +54,13 @@ module.exports = tseslint.config(
     // Node ES-module scripts (tooling that runs outside the app bundle).
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { process: 'readonly', console: 'readonly', crypto: 'readonly' },
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        crypto: 'readonly',
+        // Blob is a Node 18+ global (used to upload test objects in authz-check).
+        Blob: 'readonly',
+      },
     },
   },
   {

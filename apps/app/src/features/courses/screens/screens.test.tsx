@@ -60,6 +60,9 @@ jest.mock('../modulesApi', () => ({
   saveModuleOrder: jest.fn(),
   deleteModule: jest.fn(),
 }));
+jest.mock('../../materials/uploadService', () => ({
+  removeCourseMaterialObjects: jest.fn().mockResolvedValue(0),
+}));
 jest.mock('../examsApi', () => ({
   listExams: jest.fn(),
   fetchExam: jest.fn(),

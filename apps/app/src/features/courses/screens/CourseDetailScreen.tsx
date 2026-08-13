@@ -37,6 +37,7 @@ import {
   type Module,
 } from '../modulesApi';
 import { listExams, type ExamWithModules } from '../examsApi';
+import { removeCourseMaterialObjects } from '../../materials/uploadService';
 
 const TWO_COLUMN_MIN_WIDTH = 900;
 
@@ -100,6 +101,10 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
     const client = getSupabase();
     if (!client || !user) return;
     try {
+      // Remove stored material objects first: the SQL cascade deletes the
+      // document rows, but storage objects are not part of the cascade and
+      // must never be orphaned (ADR-0008).
+      await removeCourseMaterialObjects(client, courseId);
       await deleteOwnCourse(client, user.id, courseId);
       router.replace('/courses');
     } catch {
@@ -146,6 +151,10 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
         ) : null}
         <View style={styles.metaActions}>
           <SecondaryButton
+            label="Materials"
+            onPress={() => router.push(`/course/${courseId}/materials`)}
+          />
+          <SecondaryButton
             label="Edit details"
             onPress={() => router.push(`/course/${courseId}/edit`)}
           />
@@ -161,7 +170,7 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
         </View>
         {confirmingDelete ? (
           <ConfirmInline
-            message={`Permanently delete “${course.title}”? This also deletes its ${modules.length} module(s) and ${exams.length} exam(s). Your profile and other courses are not affected. If you just want it out of the way, archive it instead. This cannot be undone.`}
+            message={`Permanently delete “${course.title}”? This also deletes its ${modules.length} module(s), ${exams.length} exam(s) and any uploaded materials. Your profile and other courses are not affected. If you just want it out of the way, archive it instead. This cannot be undone.`}
             confirmLabel="Delete permanently"
             onConfirm={onDeleteCourse}
             onCancel={() => setConfirmingDelete(false)}

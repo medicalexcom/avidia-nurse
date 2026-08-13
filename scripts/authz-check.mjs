@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Authorization / RLS verification for profiles (M1) and courses/modules/
- * exams/exam_modules (M2).
+ * Authorization / RLS verification for profiles (M1), courses/modules/
+ * exams/exam_modules (M2), and documents + course-materials storage (M3).
  *
  * Runs against a REAL Supabase project (never in the client bundle). Requires:
  *   SUPABASE_URL                — project URL
@@ -28,7 +28,16 @@
  *   10. Cross-user writes under someone else's course fail.
  *   11. user_id / course_id cannot be reassigned (column grants).
  *   12. exam_modules cannot reference another user's records or span courses.
- *   13. Course deletion cascades to its children but never the profile.
+ *
+ * M3 checks (spec K):
+ *   14. Owner can create a document row, store its object and sign a URL.
+ *   15. documents.storage_key cannot point at a foreign storage path (CHECK).
+ *   16. Cross-user document reads/inserts/updates/deletes fail; uploaded_by
+ *       cannot be spoofed.
+ *   17. Storage policies block cross-user upload/replace/download/list/sign/
+ *       delete and anonymous access, even with the exact object path.
+ *   18. Course deletion cascades to modules, exams, links AND documents, but
+ *       never the profile.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -250,19 +259,148 @@ try {
     Boolean(crossCourseLink.error)
   );
 
-  // 13. Deleting a course cascades to its modules/exams/links but never
-  // touches the profile.
+  // -------------------------------------------------------------------------
+  // M3 checks (spec K): documents + private course-materials storage.
+  // -------------------------------------------------------------------------
+
+  // 14. Owner can create a document row, store the object, and finish it.
+  const docIns = await a.client
+    .from('documents')
+    .insert({
+      course_id: courseId,
+      uploaded_by: a.id,
+      filename: 'authz-test.txt',
+      original_filename: 'authz-test.txt',
+      mime_type: 'text/plain',
+      file_extension: 'txt',
+      file_size: 20,
+      document_type: 'notes',
+      content_hash: null,
+    })
+    .select()
+    .single();
+  check('owner creates document row in own course', !docIns.error, docIns.error?.message);
+  const docId = docIns.data?.id;
+  const objectKey = `${a.id}/${courseId}/${docId}/authz-test.txt`;
+  const objectBody = new Blob(['authz storage check'], { type: 'text/plain' });
+  const objUp = await a.client.storage.from('course-materials').upload(objectKey, objectBody, {
+    contentType: 'text/plain',
+    upsert: false,
+  });
+  check('owner uploads object to own storage folder', !objUp.error, objUp.error?.message);
+  const docDone = await a.client
+    .from('documents')
+    .update({ storage_key: objectKey, processing_status: 'uploaded' })
+    .eq('id', docId)
+    .select()
+    .single();
+  check(
+    'owner marks document uploaded with storage key',
+    !docDone.error && docDone.data?.processing_status === 'uploaded',
+    docDone.error?.message
+  );
+  const signed = await a.client.storage.from('course-materials').createSignedUrl(objectKey, 60);
+  check('owner can create a short-lived signed URL', !signed.error, signed.error?.message);
+
+  // 15. The storage_key CHECK ties rows to the owner's folder: a key outside
+  // {uploaded_by}/{course_id}/{id}/ must be rejected by the database.
+  const badKey = await a.client
+    .from('documents')
+    .update({ storage_key: `${b.id}/${courseId}/${docId}/authz-test.txt` })
+    .eq('id', docId);
+  check('document cannot point at a foreign storage path', Boolean(badKey.error));
+
+  // 16. Cross-user document access is impossible at the database level.
+  const bDocs = await b.client.from('documents').select('*').eq('course_id', courseId);
+  check("user cannot read another user's documents", (bDocs.data ?? []).length === 0);
+  const bDocIns = await b.client.from('documents').insert({
+    course_id: courseId,
+    uploaded_by: b.id,
+    filename: 'intruder.txt',
+    original_filename: 'intruder.txt',
+    mime_type: 'text/plain',
+    file_extension: 'txt',
+    file_size: 10,
+    document_type: 'other',
+    content_hash: null,
+  });
+  check("user cannot upload a document into another user's course", Boolean(bDocIns.error));
+  const spoofUploader = await a.client.from('documents').insert({
+    course_id: courseId,
+    uploaded_by: b.id,
+    filename: 'spoof.txt',
+    original_filename: 'spoof.txt',
+    mime_type: 'text/plain',
+    file_extension: 'txt',
+    file_size: 10,
+    document_type: 'other',
+    content_hash: null,
+  });
+  check('uploaded_by cannot be attributed to another user', Boolean(spoofUploader.error));
+  const bDocUpd = await b.client
+    .from('documents')
+    .update({ document_type: 'lecture' })
+    .eq('id', docId)
+    .select();
+  check("user cannot update another user's document", (bDocUpd.data ?? []).length === 0);
+  const bDocDel = await b.client.from('documents').delete().eq('id', docId).select();
+  check("user cannot delete another user's document", (bDocDel.data ?? []).length === 0);
+
+  // 17. Storage-policy isolation: knowing the exact object path gives B and
+  // anonymous clients nothing — policies, not path obscurity, control access.
+  const bObjUp = await b.client.storage
+    .from('course-materials')
+    .upload(
+      `${a.id}/${courseId}/${docId}/injected.txt`,
+      new Blob(['intrusion'], { type: 'text/plain' }),
+      { contentType: 'text/plain', upsert: false }
+    );
+  check("user cannot upload into another user's storage folder", Boolean(bObjUp.error));
+  const bObjReplace = await b.client.storage
+    .from('course-materials')
+    .upload(objectKey, new Blob(['replaced'], { type: 'text/plain' }), {
+      contentType: 'text/plain',
+      upsert: true,
+    });
+  check("user cannot replace another user's object", Boolean(bObjReplace.error));
+  const bObjDown = await b.client.storage.from('course-materials').download(objectKey);
+  check("user cannot download another user's object by guessed path", Boolean(bObjDown.error));
+  const bObjList = await b.client.storage
+    .from('course-materials')
+    .list(`${a.id}/${courseId}/${docId}`);
+  check("user cannot list another user's storage objects", (bObjList.data ?? []).length === 0);
+  const bSigned = await b.client.storage.from('course-materials').createSignedUrl(objectKey, 60);
+  check("user cannot sign another user's object", Boolean(bSigned.error));
+  const bObjDel = await b.client.storage.from('course-materials').remove([objectKey]);
+  check(
+    "user cannot delete another user's object",
+    Boolean(bObjDel.error) || (bObjDel.data ?? []).length === 0
+  );
+  const anonDown = await userClient().storage.from('course-materials').download(objectKey);
+  check('anonymous client cannot download a material', Boolean(anonDown.error));
+  const stillThere = await admin.storage.from('course-materials').download(objectKey);
+  check('object survived the attack attempts (admin check)', !stillThere.error);
+
+  // 18. Deleting a course cascades to its modules/exams/links/documents but
+  // never touches the profile. (The app removes storage objects before the
+  // course row — SQL cannot cascade into storage, so we clean up here.)
   const aDel = await a.client.from('courses').delete().eq('id', courseId).select();
   check('owner deletes own course', (aDel.data ?? []).length === 1);
   const orphanModules = await admin.from('modules').select('id').eq('course_id', courseId);
   const orphanExams = await admin.from('exams').select('id').eq('course_id', courseId);
   const orphanLinks = await admin.from('exam_modules').select('exam_id').eq('exam_id', examId);
+  const orphanDocs = await admin.from('documents').select('id').eq('course_id', courseId);
   check(
-    'course delete cascades to modules, exams and exam_modules',
+    'course delete cascades to modules, exams, exam_modules and documents',
     (orphanModules.data ?? []).length === 0 &&
       (orphanExams.data ?? []).length === 0 &&
-      (orphanLinks.data ?? []).length === 0
+      (orphanLinks.data ?? []).length === 0 &&
+      (orphanDocs.data ?? []).length === 0
   );
+  await admin.storage
+    .from('course-materials')
+    .remove([objectKey])
+    .catch(() => {});
   const profileStill = await admin.from('profiles').select('id').eq('id', a.id).maybeSingle();
   check('profile survives course deletion', Boolean(profileStill.data));
 } catch (err) {

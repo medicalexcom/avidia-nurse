@@ -7,6 +7,11 @@
   "engines": {
     "node": ">=20"
   },
+  "pnpm": {
+    "ignoredOptionalDependencies": [
+      "canvas"
+    ]
+  },
   "scripts": {
     "lint": "eslint .",
     "format": "prettier --write .",

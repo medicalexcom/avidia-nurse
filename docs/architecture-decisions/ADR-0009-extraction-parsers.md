@@ -31,6 +31,17 @@ upgrading is a test-infrastructure task, not a parser rewrite. We disable
 eval support and font rendering (`isEvalSupported: false`,
 `disableFontFace: true`) since we only read text.
 
+Security note (post-M4 reconciliation): the pinned version is within the
+advisory range of CVE-2024-4367 (arbitrary JavaScript execution when
+rendering a malicious PDF's fonts). Our usage does not render — the worker
+only calls `getTextContent()` — and `isEvalSupported: false` is Mozilla's
+documented mitigation, which disables the vulnerable eval path entirely.
+The residual risk is accepted until the v4+ upgrade (blocked on the ESM
+test-toolchain task above). pdfjs-dist's optional `canvas` dependency (a
+native Node rendering backend we never invoke, whose install chain pulled
+in outdated `node-pre-gyp`/`tar`) is excluded via
+`pnpm.ignoredOptionalDependencies` in the root `package.json`.
+
 Rejected: `pdf-parse` (thin, stale wrapper around old pdf.js); native
 binaries like `poppler`/`mupdf` (CI/deployment friction, no benefit for
 text-based PDFs).

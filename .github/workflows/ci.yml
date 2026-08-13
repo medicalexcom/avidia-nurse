@@ -40,6 +40,15 @@ jobs:
       - name: Build web bundle
         run: pnpm run build:web
 
+      - name: Authorization (RLS) checks
+        # Skips cleanly (exit 0) until the Supabase secrets below are configured
+        # in the repository settings; then it verifies RLS against the real project.
+        run: pnpm run test:authz
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

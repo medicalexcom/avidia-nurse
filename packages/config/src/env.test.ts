@@ -38,6 +38,27 @@ describe('validateClientEnv', () => {
     );
   });
 
+  it('accepts a valid Supabase configuration (M1)', () => {
+    const env = validateClientEnv({
+      EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: 'public-anon-key',
+    });
+    expect(env.EXPO_PUBLIC_SUPABASE_URL).toBe('https://abcdefgh.supabase.co');
+    expect(env.EXPO_PUBLIC_SUPABASE_ANON_KEY).toBe('public-anon-key');
+  });
+
+  it('treats Supabase configuration as optional (auth shown as unavailable)', () => {
+    const env = validateClientEnv({});
+    expect(env.EXPO_PUBLIC_SUPABASE_URL).toBeUndefined();
+    expect(env.EXPO_PUBLIC_SUPABASE_ANON_KEY).toBeUndefined();
+  });
+
+  it('rejects a malformed Supabase URL', () => {
+    expect(() => validateClientEnv({ EXPO_PUBLIC_SUPABASE_URL: 'not-a-url' })).toThrow(
+      EnvValidationError
+    );
+  });
+
   it('rejects non-http(s) protocols', () => {
     expect(() =>
       validateClientEnv({ EXPO_PUBLIC_API_BASE_URL: 'ftp://api.avidianurse.example.com' })

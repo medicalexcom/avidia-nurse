@@ -5,8 +5,10 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M0 — Repository Bootstrap.** Only the project skeleton exists. There is no
-backend, authentication, AI integration, or study functionality yet.
+**Current milestone: M1 — Authentication and User Shell.** Email/password authentication, a
+minimal user profile (timezone, program type), and the responsive authenticated app shell exist.
+Courses, AI study tools, and analytics arrive in later milestones and are clearly marked as
+placeholders in the app.
 
 ## Repository structure
 
@@ -14,12 +16,13 @@ backend, authentication, AI integration, or study functionality yet.
 avidia-nurse/
 ├── apps/
 │   └── app/                # The single cross-platform student app (Expo / React Native / Expo Web)
-│       ├── App.tsx         # Root component
+│       ├── app/            # expo-router routes: (auth) sign-in/up, (app) authenticated shell
 │       ├── app.json        # Expo configuration (iOS/Android/web targets)
 │       └── src/
 │           ├── config/     # Validated environment configuration
-│           ├── screens/    # Screens (responsive: one tree for mobile + desktop web)
-│           └── components/ # Shared UI components
+│           ├── lib/        # Supabase client (session persistence, token refresh)
+│           ├── features/   # auth (provider, guards, error mapping), profile (own-row API)
+│           └── ui/         # Theme, shared components, responsive navigation shell
 ├── packages/
 │   └── config/             # Platform-agnostic shared configuration (no React, no LLM deps).
 │                           # Domain packages (domain, adaptive-engine, ai-gateway, …) are
@@ -61,6 +64,8 @@ pnpm run format:check      # Prettier formatting check (format with: pnpm run fo
 pnpm run typecheck         # TypeScript, all workspaces (via Turborepo)
 pnpm test                  # Jest, all workspaces (via Turborepo)
 pnpm run build:web         # production web export (apps/app/dist)
+pnpm run test:authz        # RLS/authorization checks against a real Supabase project
+                           # (prints SKIPPED when Supabase secrets are not configured)
 ```
 
 All of these run in CI on every push and pull request.
@@ -73,7 +78,16 @@ schema (`packages/config/src/env.ts`). See `.env.example`.
 **Never put secrets in this repository or in any `EXPO_PUBLIC_*` variable.** Anything prefixed
 `EXPO_PUBLIC_` is embedded in the client bundle and visible to every user. AI provider keys,
 database service keys, and other secrets will live only in backend environment configuration
-introduced in later milestones.
+introduced in later milestones. The one deliberate exception is the Supabase **anon** key, which
+is public by design and safe only because row-level security is enforced on the server — see
+ADR-0006.
+
+## Backend (Supabase)
+
+Authentication and the user profile use Supabase. Setup steps (create the project, apply
+`supabase/migrations/`, configure `.env`) are in [`supabase/README.md`](supabase/README.md). The
+app builds and runs without a configured backend; auth then reports a friendly
+"service unavailable" state.
 
 ## Documentation
 

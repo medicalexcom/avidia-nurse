@@ -37,6 +37,20 @@ export const clientEnvSchema = z.object({
   EXPO_PUBLIC_WEB_APP_URL: httpUrl.optional(),
   /** Public (non-secret) analytics write key. Optional until analytics lands. */
   EXPO_PUBLIC_ANALYTICS_KEY: z.string().min(1).optional(),
+  /**
+   * Supabase project URL (M1 auth). Public by design: it only identifies the
+   * project; all data access is enforced server-side by row-level security.
+   * Optional so the app can start (with auth marked unavailable) before a
+   * backend project is configured.
+   */
+  EXPO_PUBLIC_SUPABASE_URL: httpUrl.optional(),
+  /**
+   * Supabase anonymous (publishable) API key. Intentionally public — it grants
+   * only the access that row-level security policies allow. The service-role
+   * key is a SECRET, is not an EXPO_PUBLIC_ variable, and must NEVER be
+   * referenced anywhere in client code.
+   */
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).optional(),
 });
 
 export type ClientEnv = z.infer<typeof clientEnvSchema>;

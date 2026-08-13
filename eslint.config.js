@@ -50,5 +50,19 @@ module.exports = tseslint.config(
       '@typescript-eslint/no-require-imports': 'off',
     },
   },
+  {
+    // Node ES-module scripts (tooling that runs outside the app bundle).
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly', crypto: 'readonly' },
+    },
+  },
+  {
+    // Jest setup files run inside the Jest runtime.
+    files: ['**/jest.setup.js'],
+    languageOptions: {
+      globals: { jest: 'readonly' },
+    },
+  },
   prettier
 );

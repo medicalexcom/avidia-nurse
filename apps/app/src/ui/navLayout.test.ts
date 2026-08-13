@@ -12,10 +12,10 @@ describe('responsive shell layout', () => {
     expect(pickNavLayout(1440)).toBe('sidebar'); // desktop
   });
 
-  it('exposes the M1 navigation structure with placeholders clearly marked', () => {
+  it('exposes the navigation structure with placeholders clearly marked (Courses is live in M2)', () => {
     const labels = NAV_DESTINATIONS.map((d) => d.label);
     expect(labels).toEqual(['Home', 'Courses', 'Study', 'Weaknesses', 'Progress', 'Profile']);
     const placeholders = NAV_DESTINATIONS.filter((d) => d.placeholder).map((d) => d.label);
-    expect(placeholders).toEqual(['Courses', 'Study', 'Weaknesses', 'Progress']);
+    expect(placeholders).toEqual(['Study', 'Weaknesses', 'Progress']);
   });
 });

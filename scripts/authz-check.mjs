@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Authorization / RLS verification for the M1 profile foundation.
+ * Authorization / RLS verification for profiles (M1) and courses/modules/
+ * exams/exam_modules (M2).
  *
  * Runs against a REAL Supabase project (never in the client bundle). Requires:
  *   SUPABASE_URL                — project URL
@@ -20,6 +21,14 @@
  *   5. A user CANNOT update another user's profile.
  *   6. A user CANNOT insert or delete profile rows.
  *   7. An unauthenticated (anon) client can read nothing.
+ *
+ * M2 checks (spec B):
+ *   8.  Owner can create courses, modules, exams and exam-module links.
+ *   9.  Cross-user reads of course data return nothing.
+ *   10. Cross-user writes under someone else's course fail.
+ *   11. user_id / course_id cannot be reassigned (column grants).
+ *   12. exam_modules cannot reference another user's records or span courses.
+ *   13. Course deletion cascades to its children but never the profile.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -132,6 +141,130 @@ try {
   // 7. Unauthenticated client reads nothing.
   const anonRead = await userClient().from('profiles').select('id');
   check('anonymous client reads nothing', (anonRead.data ?? []).length === 0);
+
+  // ---------------------------------------------------------------------
+  // M2: courses, modules, exams, exam_modules (spec B).
+  // ---------------------------------------------------------------------
+
+  // 8. Owner CRUD on courses works.
+  const courseIns = await a.client
+    .from('courses')
+    .insert({ user_id: a.id, title: 'Pharmacology', term: 'Fall 2026' })
+    .select()
+    .single();
+  check('user creates own course', !courseIns.error, courseIns.error?.message);
+  const courseId = courseIns.data?.id;
+
+  const modIns = await a.client
+    .from('modules')
+    .insert({ course_id: courseId, title: 'Cardiac', sequence: 0 })
+    .select()
+    .single();
+  check('user creates module in own course', !modIns.error, modIns.error?.message);
+  const moduleId = modIns.data?.id;
+
+  const examIns = await a.client
+    .from('exams')
+    .insert({ course_id: courseId, title: 'Exam 1', exam_at: '2026-09-04T14:00:00Z', weight: 25 })
+    .select()
+    .single();
+  check('user creates exam in own course', !examIns.error, examIns.error?.message);
+  const examId = examIns.data?.id;
+
+  const linkIns = await a.client
+    .from('exam_modules')
+    .insert({ exam_id: examId, module_id: moduleId });
+  check('user links own exam to own module (same course)', !linkIns.error, linkIns.error?.message);
+
+  // 9. Cross-user reads of course data return nothing.
+  const bCourse = await b.client.from('courses').select('*').eq('id', courseId).maybeSingle();
+  check("user cannot read another user's course by id", !bCourse.data);
+  const bModules = await b.client.from('modules').select('*').eq('course_id', courseId);
+  check("user cannot read another user's modules", (bModules.data ?? []).length === 0);
+  const bExams = await b.client.from('exams').select('*').eq('course_id', courseId);
+  check("user cannot read another user's exams", (bExams.data ?? []).length === 0);
+
+  // 10. Cross-user writes under someone else's course must fail.
+  const bModIns = await b.client
+    .from('modules')
+    .insert({ course_id: courseId, title: 'Intrusion', sequence: 0 });
+  check("user cannot create a module under another user's course", Boolean(bModIns.error));
+  const bExamIns = await b.client
+    .from('exams')
+    .insert({ course_id: courseId, title: 'Intrusion', exam_at: '2026-09-04T14:00:00Z' });
+  check("user cannot create an exam under another user's course", Boolean(bExamIns.error));
+  const bCourseUpd = await b.client
+    .from('courses')
+    .update({ title: 'Hacked' })
+    .eq('id', courseId)
+    .select();
+  check("user cannot update another user's course", (bCourseUpd.data ?? []).length === 0);
+  const bCourseDel = await b.client.from('courses').delete().eq('id', courseId).select();
+  check("user cannot delete another user's course", (bCourseDel.data ?? []).length === 0);
+
+  // 11. Reparenting is impossible (column grants): user_id / course_id are
+  // not updatable even by the owner.
+  const reparentCourse = await a.client
+    .from('courses')
+    .update({ user_id: b.id })
+    .eq('id', courseId);
+  check('owner cannot reassign course user_id', Boolean(reparentCourse.error));
+  const reparentModule = await a.client
+    .from('modules')
+    .update({ course_id: crypto.randomUUID() })
+    .eq('id', moduleId);
+  check('owner cannot reassign module course_id', Boolean(reparentModule.error));
+
+  // 12. Join table cannot reference foreign records: B cannot link B's own
+  // exam to A's module (cross-user), and A cannot link across A's own courses.
+  const bOwnCourse = await b.client
+    .from('courses')
+    .insert({ user_id: b.id, title: 'B Course' })
+    .select()
+    .single();
+  const bOwnExam = await b.client
+    .from('exams')
+    .insert({ course_id: bOwnCourse.data?.id, title: 'B Exam', exam_at: '2026-09-04T14:00:00Z' })
+    .select()
+    .single();
+  const bLink = await b.client
+    .from('exam_modules')
+    .insert({ exam_id: bOwnExam.data?.id, module_id: moduleId });
+  check("user cannot link own exam to another user's module", Boolean(bLink.error));
+
+  const aCourse2 = await a.client
+    .from('courses')
+    .insert({ user_id: a.id, title: 'A Course 2' })
+    .select()
+    .single();
+  const aMod2 = await a.client
+    .from('modules')
+    .insert({ course_id: aCourse2.data?.id, title: 'Other course module', sequence: 0 })
+    .select()
+    .single();
+  const crossCourseLink = await a.client
+    .from('exam_modules')
+    .insert({ exam_id: examId, module_id: aMod2.data?.id });
+  check(
+    'exam cannot be linked to a module from a different course',
+    Boolean(crossCourseLink.error)
+  );
+
+  // 13. Deleting a course cascades to its modules/exams/links but never
+  // touches the profile.
+  const aDel = await a.client.from('courses').delete().eq('id', courseId).select();
+  check('owner deletes own course', (aDel.data ?? []).length === 1);
+  const orphanModules = await admin.from('modules').select('id').eq('course_id', courseId);
+  const orphanExams = await admin.from('exams').select('id').eq('course_id', courseId);
+  const orphanLinks = await admin.from('exam_modules').select('exam_id').eq('exam_id', examId);
+  check(
+    'course delete cascades to modules, exams and exam_modules',
+    (orphanModules.data ?? []).length === 0 &&
+      (orphanExams.data ?? []).length === 0 &&
+      (orphanLinks.data ?? []).length === 0
+  );
+  const profileStill = await admin.from('profiles').select('id').eq('id', a.id).maybeSingle();
+  check('profile survives course deletion', Boolean(profileStill.data));
 } catch (err) {
   console.error(`ERROR: ${err.message}`);
   failures += 1;

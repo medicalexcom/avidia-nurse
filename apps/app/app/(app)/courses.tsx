@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from '../../src/ui/components';
+import { CoursesListScreen } from '../../src/features/courses/screens/CoursesListScreen';
 
-export default function CoursesScreen() {
-  return <PlaceholderScreen title="Courses" milestone="M2 — Courses & exams" />;
+export default function CoursesRoute() {
+  return <CoursesListScreen />;
 }

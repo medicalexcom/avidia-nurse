@@ -5,10 +5,10 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M1 — Authentication and User Shell.** Email/password authentication, a
-minimal user profile (timezone, program type), and the responsive authenticated app shell exist.
-Courses, AI study tools, and analytics arrive in later milestones and are clearly marked as
-placeholders in the app.
+**Current milestone: M2 — Courses, Modules, and Exams.** On top of the M1 authentication and
+app shell, students can now create courses, organize modules, schedule exams with weights and
+module coverage, and see timezone-correct exam countdowns. AI study tools and analytics arrive
+in later milestones and are clearly marked as placeholders in the app.
 
 ## Repository structure
 
@@ -21,12 +21,13 @@ avidia-nurse/
 │       └── src/
 │           ├── config/     # Validated environment configuration
 │           ├── lib/        # Supabase client (session persistence, token refresh)
-│           ├── features/   # auth (provider, guards, error mapping), profile (own-row API)
+│           ├── features/   # auth (provider, guards, errors), profile, courses (data + screens)
 │           └── ui/         # Theme, shared components, responsive navigation shell
 ├── packages/
-│   └── config/             # Platform-agnostic shared configuration (no React, no LLM deps).
-│                           # Domain packages (domain, adaptive-engine, ai-gateway, …) are
-│                           # added at the milestones that give them real content.
+│   ├── config/             # Platform-agnostic shared configuration (no React, no LLM deps)
+│   └── domain/             # Pure domain logic: validation, timezone-safe time math, exam
+│                           # countdowns. Further packages (adaptive-engine, ai-gateway, …)
+│                           # are added at the milestones that give them real content.
 ├── docs/
 │   ├── product/                 # The three governing specification documents
 │   ├── architecture-decisions/  # ADRs — why the architecture is the way it is

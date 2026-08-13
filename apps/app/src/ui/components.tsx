@@ -92,6 +92,62 @@ export function PrimaryButton({
   );
 }
 
+export function SecondaryButton({
+  label,
+  onPress,
+  disabled,
+  destructive,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        disabled && styles.buttonDisabled,
+        pressed && styles.secondaryButtonPressed,
+      ]}
+    >
+      <Text style={[styles.secondaryButtonLabel, destructive && styles.destructiveLabel]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Inline destructive confirmation (works identically on native and web,
+ * unlike Alert.alert). Explains exactly what will be deleted before letting
+ * the user confirm.
+ */
+export function ConfirmInline({
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <View style={styles.confirmBox} accessibilityRole="alert">
+      <Text style={styles.confirmText}>{message}</Text>
+      <View style={styles.confirmActions}>
+        <SecondaryButton label="Cancel" onPress={onCancel} />
+        <SecondaryButton label={confirmLabel} onPress={onConfirm} destructive />
+      </View>
+    </View>
+  );
+}
+
 export function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
@@ -154,4 +210,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing(4),
   },
   errorText: { color: colors.danger, fontSize: 14 },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: spacing(2),
+    paddingHorizontal: spacing(3),
+  },
+  secondaryButtonPressed: { backgroundColor: colors.background },
+  secondaryButtonLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  destructiveLabel: { color: colors.danger },
+  confirmBox: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: spacing(3),
+    marginVertical: spacing(2),
+    gap: spacing(2),
+  },
+  confirmText: { color: colors.text, fontSize: 14, lineHeight: 20 },
+  confirmActions: { flexDirection: 'row', gap: spacing(2), justifyContent: 'flex-end' },
 });

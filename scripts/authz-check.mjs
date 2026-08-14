@@ -122,6 +122,25 @@
  *   49. The five mode session_type values are accepted for the owner's own
  *       course, and an invented session_type is rejected by the check
  *       constraint — session history cannot be mislabeled.
+ *
+ * M11 checks (spec N/V/W/X/Y/AW/BC): patient simulation.
+ *   50. Seeded cases are readable metadata-only; the authoritative
+ *       `definition` column is not selectable and anon sees no cases.
+ *   51. start_simulation creates a session for the owner and RESUMES the
+ *       existing active session on a repeat call; the client view leaks no
+ *       hidden findings or server internals.
+ *   52. User B can neither start on A's course, read A's session, act on it,
+ *       nor fetch its view; anonymous clients cannot call the RPCs.
+ *   53. Server-only columns (sessions.state/score, actions.events/result)
+ *       are not selectable by any client.
+ *   54. No direct write path: even the owner cannot insert/update sessions
+ *       or forge action-history rows — the RPCs are the only door.
+ *   55. simulation_act appends exactly one audited row per submission; a
+ *       replayed idempotency key returns the stored result without
+ *       re-running, and rejected actions are audited but change nothing.
+ *   56. The debrief is refused while the session is still active.
+ *   57. Course deletion cascades to simulation sessions and their action
+ *       history — no orphaned clinical state.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -1570,6 +1589,176 @@ try {
     await admin.from('study_sessions').delete().eq('id', id);
   }
 
+  // 50. M11 simulation cases (spec AB/N/AW): the seeded library is readable
+  // metadata-only — the authoritative `definition` (hidden findings, rules,
+  // answers) is NOT selectable by any client, and anonymous clients see no
+  // cases at all.
+  const simCases = await a.client
+    .from('simulation_cases')
+    .select('id, case_key, status, engine_version')
+    .eq('case_key', 'postop_pe');
+  const simCaseRow = (simCases.data ?? [])[0];
+  check(
+    'authenticated user reads the seeded active simulation case metadata',
+    Boolean(simCaseRow) && simCaseRow.status === 'active',
+    simCases.error?.message
+  );
+  const simDefLeak = await a.client.from('simulation_cases').select('definition').limit(1);
+  check('simulation case definition column is not selectable (spec N)', Boolean(simDefLeak.error));
+  const anonSimCases = await userClient().from('simulation_cases').select('id');
+  check('anonymous client reads no simulation cases', (anonSimCases.data ?? []).length === 0);
+
+  // 51. start_simulation (spec V/X): owner starts a session on their own
+  // course; a second call RESUMES the same session instead of forking.
+  const simStart = await a.client.rpc('start_simulation', {
+    p_course_id: courseId,
+    p_case_key: 'postop_pe',
+  });
+  const simSessionId = simStart.data?.session_id;
+  check(
+    'owner starts a simulation session via the RPC',
+    !simStart.error && Boolean(simSessionId) && simStart.data?.resumed === false,
+    simStart.error?.message
+  );
+  const simResume = await a.client.rpc('start_simulation', {
+    p_course_id: courseId,
+    p_case_key: 'postop_pe',
+  });
+  check(
+    'starting again resumes the existing active session (spec X)',
+    !simResume.error &&
+      simResume.data?.session_id === simSessionId &&
+      simResume.data?.resumed === true,
+    simResume.error?.message
+  );
+  const simViewLeak = JSON.stringify(simStart.data?.view ?? {});
+  check(
+    'the client view leaks no hidden findings or server internals (spec N)',
+    !simViewLeak.includes('circumoral cyanosis') &&
+      !simViewLeak.includes('deteriorationLevel') &&
+      !simViewLeak.includes('firedRules')
+  );
+
+  // 52. Cross-user + anonymous isolation (spec AW): User B can neither start
+  // on A's course, read A's session, act on it, nor view it.
+  const bSimStart = await b.client.rpc('start_simulation', {
+    p_course_id: courseId,
+    p_case_key: 'postop_pe',
+  });
+  check("user cannot start a simulation on another user's course", Boolean(bSimStart.error));
+  const bSimRead = await b.client.from('simulation_sessions').select('id').eq('id', simSessionId);
+  check("user cannot read another user's simulation session", (bSimRead.data ?? []).length === 0);
+  const bSimAct = await b.client.rpc('simulation_act', {
+    p_session_id: simSessionId,
+    p_action_id: 'a_obtain_vitals',
+  });
+  check("user cannot act on another user's simulation session", Boolean(bSimAct.error));
+  const bSimView = await b.client.rpc('get_simulation_view', { p_session_id: simSessionId });
+  check("user cannot fetch another user's simulation view", Boolean(bSimView.error));
+  const anonSimStart = await userClient().rpc('start_simulation', {
+    p_course_id: courseId,
+    p_case_key: 'postop_pe',
+  });
+  check('anonymous client cannot call start_simulation', Boolean(anonSimStart.error));
+
+  // 53. Server-only state (spec N/C): the authoritative session state, the
+  // score payload, and per-action events/results are not selectable.
+  const simStateLeak = await a.client
+    .from('simulation_sessions')
+    .select('state')
+    .eq('id', simSessionId);
+  check('session state column is not selectable by the client', Boolean(simStateLeak.error));
+  const simScoreLeak = await a.client
+    .from('simulation_sessions')
+    .select('score')
+    .eq('id', simSessionId);
+  check('session score column is not selectable by the client', Boolean(simScoreLeak.error));
+  const simEventsLeak = await a.client
+    .from('simulation_actions')
+    .select('events')
+    .eq('session_id', simSessionId);
+  check('action events column is not selectable by the client', Boolean(simEventsLeak.error));
+  const simResultLeak = await a.client
+    .from('simulation_actions')
+    .select('result')
+    .eq('session_id', simSessionId);
+  check('action result column is not selectable by the client', Boolean(simResultLeak.error));
+
+  // 54. No direct write path (spec V/W/BC): even the OWNER cannot insert,
+  // update, or delete session or action rows — the RPCs are the only door.
+  const simSessForge = await a.client
+    .from('simulation_sessions')
+    .insert({ user_id: a.id, course_id: courseId, case_id: simCaseRow?.id });
+  check('client cannot insert simulation sessions directly', Boolean(simSessForge.error));
+  const simSessTamper = await a.client
+    .from('simulation_sessions')
+    .update({ status: 'completed' })
+    .eq('id', simSessionId)
+    .select();
+  check(
+    'client cannot update simulation sessions directly',
+    Boolean(simSessTamper.error) || (simSessTamper.data ?? []).length === 0
+  );
+  const simActForge = await a.client
+    .from('simulation_actions')
+    .insert({ session_id: simSessionId, seq: 999, action_id: 'a_wait', sim_time_minutes: 0 });
+  check('client cannot forge simulation action history (spec W)', Boolean(simActForge.error));
+
+  // 55. simulation_act + idempotency (spec E/W/Y): an accepted action
+  // advances simulated time and appends exactly one audited row; replaying
+  // the same idempotency key returns the stored result WITHOUT re-running,
+  // and rejected submissions are audited too.
+  const simAct1 = await a.client.rpc('simulation_act', {
+    p_session_id: simSessionId,
+    p_action_id: 'a_obtain_vitals',
+    p_params: {},
+    p_idempotency_key: 'authz-sim-key-1',
+  });
+  check(
+    'owner submits an action and receives visible events + updated view',
+    !simAct1.error && simAct1.data?.rejected === null && Array.isArray(simAct1.data?.events),
+    simAct1.error?.message
+  );
+  const simAct1Retry = await a.client.rpc('simulation_act', {
+    p_session_id: simSessionId,
+    p_action_id: 'a_obtain_vitals',
+    p_params: {},
+    p_idempotency_key: 'authz-sim-key-1',
+  });
+  const simActRows1 = await a.client
+    .from('simulation_actions')
+    .select('id, seq, rejected')
+    .eq('session_id', simSessionId);
+  check(
+    'replaying the same idempotency key does not double-apply the action (spec Y)',
+    !simAct1Retry.error &&
+      JSON.stringify(simAct1Retry.data) === JSON.stringify(simAct1.data) &&
+      (simActRows1.data ?? []).length === 1
+  );
+  const simActBad = await a.client.rpc('simulation_act', {
+    p_session_id: simSessionId,
+    p_action_id: 'not_a_real_action',
+  });
+  const simActRows2 = await a.client
+    .from('simulation_actions')
+    .select('seq, rejected')
+    .eq('session_id', simSessionId)
+    .order('seq');
+  check(
+    'rejected actions change nothing but are still audited (spec W/BC)',
+    !simActBad.error &&
+      simActBad.data?.rejected === 'unknown_action' &&
+      (simActRows2.data ?? []).length === 2 &&
+      (simActRows2.data ?? [])[1]?.rejected === 'unknown_action'
+  );
+
+  // 56. Debrief gating (spec AQ): the debrief is only available once the
+  // session is completed — an active session refuses to reveal it.
+  const simDebriefEarly = await a.client.rpc('get_simulation_debrief', {
+    p_session_id: simSessionId,
+  });
+  check('debrief is refused while the session is still active', Boolean(simDebriefEarly.error));
+
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client
     .from('question_feedback')
@@ -1851,6 +2040,16 @@ try {
     .from('mastery_events')
     .select('id')
     .eq('course_id', courseId);
+  // 57 (M11). Simulation sessions and their append-only action history must
+  // also die with the course (spec V/AW) — no orphaned clinical state.
+  const orphanSimSessions = await admin
+    .from('simulation_sessions')
+    .select('id')
+    .eq('course_id', courseId);
+  const orphanSimActions = await admin
+    .from('simulation_actions')
+    .select('id')
+    .eq('session_id', simSessionId);
   check(
     'course delete cascades to modules, exams, exam_modules, documents, sections, chunks, concepts and the assessment layer',
     (orphanModules.data ?? []).length === 0 &&
@@ -1870,7 +2069,9 @@ try {
       (orphanAttempts.data ?? []).length === 0 &&
       (orphanFeedback.data ?? []).length === 0 &&
       (orphanMastery.data ?? []).length === 0 &&
-      (orphanMasteryEvents.data ?? []).length === 0
+      (orphanMasteryEvents.data ?? []).length === 0 &&
+      (orphanSimSessions.data ?? []).length === 0 &&
+      (orphanSimActions.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

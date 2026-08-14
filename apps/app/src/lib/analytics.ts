@@ -19,7 +19,15 @@ export type AnalyticsEvent =
       mode: 'rapid_response' | 'find_the_danger' | 'who_first' | 'medication_lab' | 'boss_battle';
     }
   | { name: 'source_viewed' }
-  | { name: 'explain_more_used' };
+  | { name: 'explain_more_used' }
+  // M11 simulation telemetry (spec BE): ONLY these four events exist. No
+  // per-action tracking, no free text, no scores — case keys are library
+  // identifiers and outcome kinds are the closed enum from the case format,
+  // so nothing personal can be serialized here either.
+  | { name: 'simulation_started'; caseKey: string; resumed: boolean }
+  | { name: 'simulation_completed'; caseKey: string; outcomeKind: string; durationMinutes: number }
+  | { name: 'simulation_abandoned'; caseKey: string }
+  | { name: 'hint_used'; caseKey: string };
 
 const MAX_BUFFERED_EVENTS = 200;
 const buffer: AnalyticsEvent[] = [];

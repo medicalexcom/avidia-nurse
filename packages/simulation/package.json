@@ -1,0 +1,26 @@
+{
+  "name": "@avidia/simulation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateful virtual-patient simulation engine (M11): deterministic case-rule interpreter (TypeScript mirror of the SQL implementation), explicit patient state, controlled action catalog, structured events, step-based simulation time, clinical-judgment scoring, hidden-finding redaction, M8 evidence normalization, and strict case-definition validation. Pure functions only — no database access, no AI calls, no node built-ins — safe for the web bundle.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@avidia/domain": "workspace:*",
+    "@avidia/knowledge": "workspace:*",
+    "@avidia/mastery": "workspace:*"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.20.1",
+    "jest": "^29.7.0",
+    "typescript": "~6.0.3"
+  }
+}

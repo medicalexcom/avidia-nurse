@@ -45,6 +45,13 @@ jest.mock('../practiceApi', () => ({
   submitAttempt: jest.fn(),
   closeStudySession: jest.fn(),
   submitQuestionFeedback: jest.fn(),
+  // M9 daily-session plumbing.
+  findResumableSession: jest.fn(),
+  insertSessionPlan: jest.fn(),
+  listSessionPlan: jest.fn(),
+  listSessionAttempts: jest.fn(),
+  markPlanSkipped: jest.fn(),
+  listQuestionSourceRefs: jest.fn(),
 }));
 jest.mock('../../concepts/conceptsApi', () => ({
   listConcepts: jest.fn(),
@@ -61,6 +68,7 @@ jest.mock('../../study/studyApi', () => ({
 }));
 
 import * as coursesApi from '../../courses/coursesApi';
+import { bufferedEvents, resetAnalytics } from '../../../lib/analytics';
 import * as conceptsApi from '../../concepts/conceptsApi';
 import * as practiceApi from '../practiceApi';
 import * as studyApi from '../../study/studyApi';
@@ -161,10 +169,18 @@ const session = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetAnalytics();
   mocked(coursesApi.fetchOwnCourse).mockResolvedValue(course);
   mocked(practiceApi.createStudySession).mockResolvedValue(session);
   mocked(practiceApi.closeStudySession).mockResolvedValue(undefined);
   mocked(practiceApi.submitQuestionFeedback).mockResolvedValue(undefined);
+  // M9 defaults: no open session, plan writes succeed, no stored sources.
+  mocked(practiceApi.findResumableSession).mockResolvedValue(null);
+  mocked(practiceApi.insertSessionPlan).mockResolvedValue(undefined);
+  mocked(practiceApi.listSessionPlan).mockResolvedValue([]);
+  mocked(practiceApi.listSessionAttempts).mockResolvedValue([]);
+  mocked(practiceApi.markPlanSkipped).mockResolvedValue(undefined);
+  mocked(practiceApi.listQuestionSourceRefs).mockResolvedValue([]);
 });
 
 describe('PracticeScreen setup', () => {
@@ -340,26 +356,137 @@ describe('PracticeScreen adaptive mode (M8 spec U/V/W)', () => {
     mocked(studyApi.listCourseExams).mockResolvedValue([]);
   });
 
-  it('creates an adaptive session and orders the persisted bank without any AI call', async () => {
+  const adaptiveSession = { ...session, session_type: 'adaptive' };
+
+  async function startFiveMinuteSession() {
     mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion, calcQuestion]);
-    mocked(practiceApi.createStudySession).mockResolvedValue({
-      ...session,
-      session_type: 'adaptive',
-    });
+    mocked(practiceApi.createStudySession).mockResolvedValue(adaptiveSession);
     await render(<PracticeScreen courseId="course-1" mode="adaptive" />);
     await screen.findByText(/Adaptive study — Adult Health I/);
     expect(screen.getByText(/picked for the topics that most need your attention/)).toBeTruthy();
-
-    await fireEvent.press(screen.getByText('2 questions'));
+    await fireEvent.press(screen.getByText('5 min'));
+    // A 5-minute plan wants 4 questions but the pool of 2 caps it (spec X).
     await screen.findByText('Question 1 of 2');
+  }
 
-    // The session row was created as 'adaptive'…
+  it('creates an adaptive session from a duration and persists the plan (spec B/D/O)', async () => {
+    await startFiveMinuteSession();
+
+    // The session row was created as 'adaptive' with the requested duration…
+    expect(mocked(practiceApi.createStudySession).mock.calls[0]![2]).toBe(2);
     expect(mocked(practiceApi.createStudySession).mock.calls[0]![3]).toBe('adaptive');
+    expect(mocked(practiceApi.createStudySession).mock.calls[0]![4]).toBe(5);
+    // …its plan was stored for resume (spec O)…
+    const planCall = mocked(practiceApi.insertSessionPlan).mock.calls[0]!;
+    expect(planCall[1]).toBe('session-1');
+    expect([...(planCall[2] as string[])].sort()).toEqual(['question-1', 'question-2']);
     // …and selection used only the student's own persisted rows.
     expect(conceptsApi.listConcepts).toHaveBeenCalled();
     expect(studyApi.listConceptMastery).toHaveBeenCalled();
     expect(studyApi.listCourseAttempts).toHaveBeenCalled();
     expect(studyApi.listCourseExams).toHaveBeenCalled();
+    // Privacy-conscious analytics: names and counts only (spec Z).
+    expect(bufferedEvents()).toContainEqual({
+      name: 'daily_session_started',
+      requestedMinutes: 5,
+      plannedQuestions: 2,
+    });
+  });
+
+  it('still starts the session when plan persistence fails (spec W)', async () => {
+    mocked(practiceApi.insertSessionPlan).mockRejectedValue(new Error('network'));
+    await startFiveMinuteSession();
+    expect(screen.getByText(/Question 1 of 2/)).toBeTruthy();
+  });
+
+  it('skip is tracked explicitly and never scored (spec AB)', async () => {
+    await startFiveMinuteSession();
+    await fireEvent.press(screen.getByText('Skip for now'));
+    await screen.findByText('Question 2 of 2');
+    await waitFor(() => expect(practiceApi.markPlanSkipped).toHaveBeenCalled());
+    expect(mocked(practiceApi.markPlanSkipped).mock.calls[0]![1]).toBe('session-1');
+    expect(practiceApi.submitAttempt).not.toHaveBeenCalled();
+  });
+
+  it('offers to resume an open session instead of silently discarding it (spec O)', async () => {
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion, calcQuestion]);
+    mocked(practiceApi.findResumableSession).mockResolvedValue(adaptiveSession);
+    await render(<PracticeScreen courseId="course-1" mode="adaptive" />);
+    await screen.findByText('You have a session in progress');
+    expect(screen.getByText('Continue session')).toBeTruthy();
+  });
+
+  it('resume continues from the stored plan without re-answering or a new session (spec O)', async () => {
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion, calcQuestion]);
+    mocked(practiceApi.findResumableSession).mockResolvedValue(adaptiveSession);
+    mocked(practiceApi.listSessionPlan).mockResolvedValue([
+      { position: 1, question_id: 'question-1', skipped_at: null },
+      { position: 2, question_id: 'question-2', skipped_at: null },
+    ]);
+    mocked(practiceApi.listSessionAttempts).mockResolvedValue([
+      { question_id: 'question-1', is_correct: true },
+    ]);
+    await render(<PracticeScreen courseId="course-1" mode="adaptive" resume />);
+    // Only the unanswered question remains; no duplicate session row is made.
+    await screen.findByText('Question 1 of 1');
+    expect(screen.getByText(/furosemide 40 mg/)).toBeTruthy();
+    expect(practiceApi.createStudySession).not.toHaveBeenCalled();
+  });
+
+  it('shows the source reference on demand after answering (spec T/G)', async () => {
+    mocked(practiceApi.submitAttempt).mockResolvedValue(sbaResult);
+    mocked(practiceApi.listQuestionSourceRefs).mockResolvedValue([
+      {
+        document_filename: 'cardiac-week3.pptx',
+        source_locator: { type: 'slide', slide: 4 },
+      },
+    ]);
+    await startFiveMinuteSession();
+    if (screen.queryByText(/Which action should the nurse take first/)) {
+      await fireEvent.press(screen.getByText('Administer IV calcium gluconate'));
+    } else {
+      mocked(practiceApi.submitAttempt).mockResolvedValue(calcResult);
+      await fireEvent.changeText(screen.getByLabelText('Your numeric answer'), '2');
+    }
+    await fireEvent.press(screen.getByText('Submit answer'));
+    await fireEvent.press(await screen.findByText('View source'));
+    await screen.findByText('Based on: cardiac-week3.pptx — Slide 4');
+    expect(practiceApi.listQuestionSourceRefs).toHaveBeenCalled();
+    expect(bufferedEvents()).toContainEqual({ name: 'source_viewed' });
+  });
+
+  it('ends with an honest adaptive summary — no fake precision (spec M)', async () => {
+    mocked(practiceApi.submitAttempt).mockImplementation((_c, _s, questionId: string) =>
+      Promise.resolve(questionId === 'question-1' ? sbaResult : calcResult)
+    );
+    await startFiveMinuteSession();
+    for (let index = 0; index < 2; index += 1) {
+      if (screen.queryByText(/Which action should the nurse take first/)) {
+        await fireEvent.press(screen.getByText('Administer IV calcium gluconate'));
+      } else {
+        await fireEvent.changeText(screen.getByLabelText('Your numeric answer'), '4');
+      }
+      await fireEvent.press(screen.getByText('Submit answer'));
+      await fireEvent.press(
+        index === 0
+          ? await screen.findByText('Next question')
+          : await screen.findByText('See results')
+      );
+    }
+    await screen.findByText(/You completed 2 activities — 1 correct\./);
+    expect(practiceApi.closeStudySession).toHaveBeenCalledWith(
+      { mocked: true },
+      'session-1',
+      'completed'
+    );
+    // No mastery percentages or grade labels anywhere (spec M).
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.getByText('Back to Today')).toBeTruthy();
+    expect(bufferedEvents()).toContainEqual({
+      name: 'daily_session_completed',
+      answeredCount: 2,
+      skippedCount: 0,
+    });
   });
 
   it('in practice mode, never touches mastery or exam data (M7 behavior preserved)', async () => {

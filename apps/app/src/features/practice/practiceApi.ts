@@ -62,6 +62,22 @@ export interface RevealedOption {
   rationale: string | null;
 }
 
+/**
+ * The full aggregate `submit_question_attempt` echoes back after applying
+ * the M8 arithmetic transactionally (migration 0008 `v_mastery_json`).
+ */
+export interface MasteryEcho {
+  concept_id: string;
+  mastery: number;
+  mastery_delta: number;
+  attempts_count: number;
+  correct_count: number;
+  misconception_severity: number;
+  review_stage: number;
+  next_review_at: string;
+  algorithm_version: number;
+}
+
 /** submit_question_attempt result: the teaching payload (spec M/W). */
 export interface AttemptResult {
   is_correct: boolean;
@@ -72,17 +88,13 @@ export interface AttemptResult {
   rounding_note: string | null;
   options: RevealedOption[];
   /**
-   * M8: coarse mastery echo from the transactional update (null for
-   * concept-less questions). The UI deliberately shows only the state label,
-   * never the number (spec AG — no fake precision).
+   * M8: the authoritative post-update aggregate from the transactional
+   * update (null for concept-less questions). The UI deliberately shows only
+   * the state label, never the number (spec AG — no fake precision). M9's
+   * in-session adaptation feeds these SERVER-returned values back into the
+   * pure ranking engine — the client never recomputes mastery arithmetic.
    */
-  mastery?: {
-    concept_id: string;
-    mastery: number;
-    review_stage: number;
-    next_review_at: string;
-    algorithm_version: number;
-  } | null;
+  mastery?: MasteryEcho | null;
 }
 
 /** Response payloads mirror the SQL scorer's expected JSON shapes (spec P). */
@@ -129,7 +141,8 @@ export async function createStudySession(
   client: SupabaseClient,
   courseId: string,
   plannedQuestionCount: number,
-  sessionType: 'practice' | 'adaptive' = 'practice'
+  sessionType: 'practice' | 'adaptive' = 'practice',
+  requestedDurationMinutes: number | null = null
 ): Promise<StudySessionRow> {
   const { data, error } = await client
     .from('study_sessions')
@@ -137,6 +150,9 @@ export async function createStudySession(
       course_id: courseId,
       session_type: sessionType,
       planned_question_count: plannedQuestionCount,
+      ...(requestedDurationMinutes === null
+        ? {}
+        : { requested_duration_minutes: requestedDurationMinutes }),
     })
     .select('id, course_id, session_type, status, planned_question_count, started_at, completed_at')
     .single();
@@ -180,6 +196,141 @@ export async function closeStudySession(
     .eq('id', sessionId)
     .eq('status', 'in_progress');
   if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// M9: persisted session plan + resume + source provenance (spec O/AB/T)
+// ---------------------------------------------------------------------------
+
+export interface SessionPlanRow {
+  position: number;
+  question_id: string;
+  skipped_at: string | null;
+}
+
+/**
+ * Persist the ordered plan of a freshly created adaptive session in one
+ * insert (migration 0009). Written exactly once at session start; this is
+ * what a resume reloads (spec O). RLS restricts the rows to the caller's own
+ * in-progress session and to questions of the same course.
+ */
+export async function insertSessionPlan(
+  client: SupabaseClient,
+  sessionId: string,
+  orderedQuestionIds: readonly string[]
+): Promise<void> {
+  if (orderedQuestionIds.length === 0) return;
+  const rows = orderedQuestionIds.map((questionId, index) => ({
+    session_id: sessionId,
+    position: index + 1,
+    question_id: questionId,
+  }));
+  const { error } = await client.from('study_session_plan').insert(rows);
+  if (error) throw error;
+}
+
+/** The stored plan of a session, in position order (resume baseline). */
+export async function listSessionPlan(
+  client: SupabaseClient,
+  sessionId: string
+): Promise<SessionPlanRow[]> {
+  const { data, error } = await client
+    .from('study_session_plan')
+    .select('position, question_id, skipped_at')
+    .eq('session_id', sessionId)
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as SessionPlanRow[];
+}
+
+/**
+ * Record a skip (spec AB): the ONLY updatable plan column is skipped_at, and
+ * the database rejects it once the session is no longer in progress. A skip
+ * is neither correct nor incorrect and never reaches the mastery engine.
+ */
+export async function markPlanSkipped(
+  client: SupabaseClient,
+  sessionId: string,
+  questionId: string
+): Promise<void> {
+  const { error } = await client
+    .from('study_session_plan')
+    .update({ skipped_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('question_id', questionId);
+  if (error) throw error;
+}
+
+/**
+ * The student's most recent still-open adaptive session for a course, if any
+ * (spec O). Used to offer RESUME after an app restart or refresh.
+ */
+export async function findResumableSession(
+  client: SupabaseClient,
+  courseId: string
+): Promise<StudySessionRow | null> {
+  const { data, error } = await client
+    .from('study_sessions')
+    .select('id, course_id, session_type, status, planned_question_count, started_at, completed_at')
+    .eq('course_id', courseId)
+    .eq('session_type', 'adaptive')
+    .eq('status', 'in_progress')
+    .order('started_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = (data ?? [])[0];
+  return row ? (row as unknown as StudySessionRow) : null;
+}
+
+/**
+ * The attempts already recorded for one session (spec O). Attempts remain
+ * the single source of answer truth — a resume subtracts these from the
+ * stored plan instead of keeping any duplicate progress state.
+ */
+export async function listSessionAttempts(
+  client: SupabaseClient,
+  sessionId: string
+): Promise<{ question_id: string; is_correct: boolean }[]> {
+  const { data, error } = await client
+    .from('question_attempts')
+    .select('question_id, is_correct')
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  return (data ?? []) as unknown as { question_id: string; is_correct: boolean }[];
+}
+
+/** A human-readable source reference for one question (spec T). */
+export interface QuestionSourceRef {
+  document_filename: string;
+  /** e.g. {"type":"pptx","slide":17,"title":"..."} — shaped by the indexer. */
+  source_locator: Record<string, unknown> | null;
+}
+
+/**
+ * Where a question came from, in student terms (spec T): the original
+ * document filename plus the chunk's human locator (slide/page/section).
+ * Chunk ids, embeddings, and similarity scores are never exposed — the
+ * column grants don't allow reading them in the first place.
+ */
+export async function listQuestionSourceRefs(
+  client: SupabaseClient,
+  questionId: string
+): Promise<QuestionSourceRef[]> {
+  const { data, error } = await client
+    .from('question_sources')
+    .select('documents(original_filename), source_chunks(source_locator)')
+    .eq('question_id', questionId);
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as {
+    documents: { original_filename: string } | null;
+    source_chunks: { source_locator: Record<string, unknown> | null } | null;
+  }[];
+  return rows
+    .filter((row) => row.documents !== null)
+    .map((row) => ({
+      document_filename: row.documents!.original_filename,
+      source_locator: row.source_chunks?.source_locator ?? null,
+    }));
 }
 
 /**

@@ -106,6 +106,18 @@
  *   44. The M8 'adaptive' session type is accepted for owners, unknown types
  *       are rejected, and B cannot start adaptive sessions under A's course;
  *       course deletion cascades to concept_mastery and mastery_events.
+ *
+ * M9 checks (spec B/O/AB/AF): daily sessions and stored plans.
+ *   45. requested_duration_minutes is stored for the owner; the 1–120 check
+ *       constraint rejects nonsense durations.
+ *   46. The stored session plan is owner-scoped end to end: the owner inserts
+ *       and reads it in order; user B and anonymous clients read nothing by
+ *       guessed id and B cannot forge rows into A's session.
+ *   47. skipped_at is the ONLY client-updatable plan column (spec AB): the
+ *       owner can mark a skip, plan order cannot be rewritten, and B cannot
+ *       skip rows in A's plan.
+ *   48. Closed sessions accept no new plan rows, and deleting a session
+ *       cascades to its plan — no orphaned plan state survives.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -1421,6 +1433,109 @@ try {
     "user cannot start an adaptive session under another user's course",
     Boolean(bAdaptiveIns.error)
   );
+
+  // 45. M9 daily sessions: requested duration is stored for the owner and the
+  // check constraint (1–120 minutes) rejects nonsense values.
+  const durationIns = await a.client
+    .from('study_sessions')
+    .insert({
+      course_id: courseId,
+      session_type: 'adaptive',
+      planned_question_count: 4,
+      requested_duration_minutes: 10,
+    })
+    .select('id, requested_duration_minutes')
+    .single();
+  check(
+    'owner starts a daily session with a requested duration (M9 spec B)',
+    !durationIns.error && durationIns.data?.requested_duration_minutes === 10,
+    durationIns.error?.message
+  );
+  const m9SessionId = durationIns.data?.id;
+  const badDuration = await a.client.from('study_sessions').insert({
+    course_id: courseId,
+    session_type: 'adaptive',
+    planned_question_count: 4,
+    requested_duration_minutes: 500,
+  });
+  check('durations outside 1–120 minutes are rejected', Boolean(badDuration.error));
+
+  // 46. The stored session plan (M9 spec O) is owner-scoped end to end.
+  const planIns = await a.client.from('study_session_plan').insert([
+    { session_id: m9SessionId, position: 1, question_id: sbaQuestionId },
+    { session_id: m9SessionId, position: 2, question_id: numericQuestionId },
+  ]);
+  check('owner stores the session plan for resume', !planIns.error, planIns.error?.message);
+  const planRead = await a.client
+    .from('study_session_plan')
+    .select('position, question_id, skipped_at')
+    .eq('session_id', m9SessionId)
+    .order('position');
+  check(
+    'owner reads own session plan in order',
+    (planRead.data ?? []).length === 2 && planRead.data?.[0]?.position === 1,
+    planRead.error?.message
+  );
+  const bPlanRead = await b.client
+    .from('study_session_plan')
+    .select('question_id')
+    .eq('session_id', m9SessionId);
+  check(
+    "user cannot read another user's session plan by guessed id",
+    (bPlanRead.data ?? []).length === 0
+  );
+  const anonPlanRead = await userClient().from('study_session_plan').select('question_id');
+  check('anonymous client reads no session plans', (anonPlanRead.data ?? []).length === 0);
+  const bPlanForge = await b.client
+    .from('study_session_plan')
+    .insert({ session_id: m9SessionId, position: 3, question_id: sbaQuestionId });
+  check("user cannot forge plan rows into another user's session", Boolean(bPlanForge.error));
+
+  // 47. Skips are the ONLY thing a client may change on a plan row (spec AB).
+  const skipUpd = await a.client
+    .from('study_session_plan')
+    .update({ skipped_at: new Date().toISOString() })
+    .eq('session_id', m9SessionId)
+    .eq('question_id', sbaQuestionId)
+    .select('skipped_at');
+  check(
+    'owner marks a plan row skipped',
+    !skipUpd.error && Boolean(skipUpd.data?.[0]?.skipped_at),
+    skipUpd.error?.message
+  );
+  const posUpd = await a.client
+    .from('study_session_plan')
+    .update({ position: 9 })
+    .eq('session_id', m9SessionId)
+    .eq('question_id', sbaQuestionId);
+  check('plan order cannot be rewritten by the client', Boolean(posUpd.error));
+  const bSkipUpd = await b.client
+    .from('study_session_plan')
+    .update({ skipped_at: new Date().toISOString() })
+    .eq('session_id', m9SessionId)
+    .eq('question_id', numericQuestionId)
+    .select('skipped_at');
+  check(
+    "user cannot skip rows in another user's plan",
+    Boolean(bSkipUpd.error) || (bSkipUpd.data ?? []).length === 0
+  );
+
+  // 48. Closed sessions accept no new plan rows, and deleting the session
+  // removes its plan (cascade) — no orphaned plan state survives.
+  await a.client
+    .from('study_sessions')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', m9SessionId);
+  const lateIns = await a.client
+    .from('study_session_plan')
+    .insert({ session_id: m9SessionId, position: 3, question_id: sbaQuestionId });
+  check('closed sessions accept no new plan rows', Boolean(lateIns.error));
+  await admin.from('study_sessions').delete().eq('id', m9SessionId);
+  const orphanPlan = await admin
+    .from('study_session_plan')
+    .select('position')
+    .eq('session_id', m9SessionId);
+  check('deleting a session cascades to its plan rows', (orphanPlan.data ?? []).length === 0);
 
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client

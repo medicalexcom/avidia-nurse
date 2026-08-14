@@ -5,7 +5,24 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M8 — Adaptive Mastery Engine and Intelligent Study Scheduler.** Every
+**Current milestone: M9 — Daily Adaptive Study Experience.** The app now opens on a Today
+screen whose central action is START TODAY: the student picks how much time they have
+(5/10/20/45 minutes) and gets a planned adaptive session built from the M8 recommendations over
+the persisted, validated question bank — one question at a time, optional one-tap confidence,
+concise rationales with "Explain more", "View source" back to the original document and
+slide/page (never chunk ids), and a deterministic "why am I studying this" from the M8 reason
+codes (never AI text). Sessions adapt mid-flight using the server's own mastery echo (the UI
+performs no mastery math), never immediately repeat a just-answered question, treat skips as
+explicit tracked state that is never scored, survive app restarts via a stored session plan
+with no duplicate mastery updates, and end with an honest summary — counts and concept names,
+no fake precision. Due reviews consume M8's stored schedule (no second scheduler), exam
+pressure flows through the M8 urgency factor (exam mode is not a separate mode), quick
+sessions use the same pipeline, and misconception moments use respectful copy.
+Privacy-conscious analytics events carry names, durations, and counts only. There is no AI
+chat box on home, no gamification, and no notifications; streaks are deferred to M10 and deep
+analytics to M12.
+
+Previous milestone — M8, the Adaptive Mastery Engine and Intelligent Study Scheduler: every
 scored answer now updates a per-concept mastery model — and THE LLM IS NOT THE MASTERY ENGINE:
 all mastery math is deterministic, versioned (`algorithm_version = 1`), unit-tested code that
 runs identically with zero AI configuration, and no mastery data ever leaves the student's own
@@ -33,7 +50,7 @@ avidia-nurse/
 │   │   └── src/
 │   │       ├── config/     # Validated environment configuration
 │   │       ├── lib/        # Supabase client (session persistence, token refresh)
-│   │       ├── features/   # auth, profile, courses, materials, concepts, practice, study
+│   │       ├── features/   # auth, profile, courses, materials, concepts, practice, study, today
 │   │       └── ui/         # Theme, shared components, responsive navigation shell
 │   └── worker/             # Background worker (service role, Node/tsx): extracts queued
 │                           # documents into sections, chunks + embeds ready documents into

@@ -107,6 +107,12 @@ create table public.simulation_sessions (
   -- the definition version it ran under, even after the case is bumped.
   case_version integer not null,
   engine_version integer not null,
+  -- Full definition SNAPSHOT taken at start (spec AX / reconciliation fix):
+  -- seed upserts replace simulation_cases.definition in place, so reading the
+  -- live row mid-session would silently reinterpret in-flight and historical
+  -- sessions under a newer revision. Every RPC below interprets the session
+  -- against THIS snapshot, never the live case row. SERVER-ONLY (spec N).
+  definition jsonb not null,
   status text not null default 'active'
     check (status in ('active', 'completed', 'abandoned')),
   -- The authoritative PatientState (packages/simulation/src/types.ts).
@@ -1280,16 +1286,19 @@ begin
       'session_id', v_session.id,
       'resumed', true,
       'status', v_session.status,
-      'view', public.sim_client_view(v_case.definition, v_session.state)
+      -- Resume against the session's pinned snapshot, not the live case row
+      -- (spec AX: the definition must not change mid-session).
+      'view', public.sim_client_view(v_session.definition, v_session.state)
     );
   end if;
 
   v_state := public.sim_start_state(v_case.definition);
   insert into public.simulation_sessions
-    (user_id, course_id, case_id, case_version, engine_version, state)
+    (user_id, course_id, case_id, case_version, engine_version, definition,
+     state)
   values
     (v_user_id, p_course_id, v_case.id, v_case.case_version,
-     v_case.engine_version, v_state)
+     v_case.engine_version, v_case.definition, v_state)
   returning * into v_session;
 
   return jsonb_build_object(
@@ -1376,8 +1385,9 @@ begin
     end if;
   end if;
 
-  select definition into v_def from public.simulation_cases
-  where id = v_session.case_id;
+  -- Interpret against the session's pinned definition snapshot (spec AX):
+  -- a reseeded case revision must never alter an in-flight session.
+  v_def := v_session.definition;
 
   v_apply := public.sim_apply_action(
     v_def, v_session.state,
@@ -1594,8 +1604,8 @@ begin
   if v_session.id is null then
     raise exception 'session not found';
   end if;
-  select definition into v_def from public.simulation_cases
-  where id = v_session.case_id;
+  -- Render from the session's pinned definition snapshot (spec AX).
+  v_def := v_session.definition;
   return jsonb_build_object(
     'session_id', v_session.id,
     'status', v_session.status,
@@ -1669,7 +1679,10 @@ begin
     raise exception 'session is not completed';
   end if;
   select * into v_case from public.simulation_cases where id = v_session.case_id;
-  v_def := v_case.definition;
+  -- The debrief must reflect the definition the session ACTUALLY ran under
+  -- (spec AX / section 13: a new case revision must not silently alter
+  -- historical results). Only display metadata comes from the live row.
+  v_def := v_session.definition;
 
   select o into v_outcome
   from jsonb_array_elements(v_def -> 'outcomes') o

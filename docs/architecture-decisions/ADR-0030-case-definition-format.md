@@ -60,6 +60,15 @@ many shallow ones. Quality over quantity is the explicit spec instruction.
 `caseVersion` is bumped on any content change; sessions pin the version
 they started under, so an in-flight session is never mutated by a reseed.
 
+Amended in the M11 reconciliation: pinning is enforced by a full
+definition SNAPSHOT copied into `simulation_sessions.definition` at start
+(server-only column, same grant posture as the case row's definition).
+Because seed upserts replace `simulation_cases.definition` in place,
+merely storing the version number was not enough — the RPCs originally
+re-read the live row, which would have let a reseed silently reinterpret
+in-flight and historical sessions. All session RPCs now interpret against
+the snapshot; only display metadata comes from the live case row.
+
 ## Alternatives considered
 
 - **Code-defined cases (a TS module per case with callbacks):** rejected;

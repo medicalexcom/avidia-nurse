@@ -131,8 +131,10 @@
  *       hidden findings or server internals.
  *   52. User B can neither start on A's course, read A's session, act on it,
  *       nor fetch its view; anonymous clients cannot call the RPCs.
- *   53. Server-only columns (sessions.state/score, actions.events/result)
- *       are not selectable by any client.
+ *   53. Server-only columns (sessions.state/score/definition snapshot,
+ *       actions.events/result) are not selectable by any client, and an
+ *       in-flight session keeps rendering from its pinned definition
+ *       snapshot even after the live case row changes (spec AX).
  *   54. No direct write path: even the owner cannot insert/update sessions
  *       or forge action-history rows — the RPCs are the only door.
  *   55. simulation_act appends exactly one audited row per submission; a
@@ -1673,6 +1675,41 @@ try {
     .select('score')
     .eq('id', simSessionId);
   check('session score column is not selectable by the client', Boolean(simScoreLeak.error));
+  // Reconciliation: the per-session definition SNAPSHOT (spec AX pinning)
+  // carries the full hidden case content and must be as unselectable as the
+  // case row's own definition column.
+  const simSessionDefLeak = await a.client
+    .from('simulation_sessions')
+    .select('definition')
+    .eq('id', simSessionId);
+  check(
+    'session definition snapshot column is not selectable by the client',
+    Boolean(simSessionDefLeak.error)
+  );
+  // Reconciliation: definition PINNING is live behavior, not just a column
+  // (spec AX / section 13). Break the live case row, prove the in-flight
+  // session still renders from its snapshot, then restore the row.
+  const simDefOriginal = await admin
+    .from('simulation_cases')
+    .select('definition')
+    .eq('case_key', 'postop_pe')
+    .single();
+  await admin
+    .from('simulation_cases')
+    .update({ definition: { broken: true } })
+    .eq('case_key', 'postop_pe');
+  const pinnedView = await a.client.rpc('get_simulation_view', {
+    p_session_id: simSessionId,
+  });
+  check(
+    'in-flight session is interpreted from its pinned snapshot, not the live case row (spec AX)',
+    !pinnedView.error && Boolean(pinnedView.data?.view?.patient),
+    pinnedView.error?.message
+  );
+  await admin
+    .from('simulation_cases')
+    .update({ definition: simDefOriginal.data?.definition })
+    .eq('case_key', 'postop_pe');
   const simEventsLeak = await a.client
     .from('simulation_actions')
     .select('events')

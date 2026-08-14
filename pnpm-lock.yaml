@@ -37,6 +37,9 @@ importers:
 
   apps/app:
     dependencies:
+      '@avidia/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@avidia/assessment':
         specifier: workspace:*
         version: link:../../packages/assessment
@@ -159,6 +162,37 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.12
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
+  packages/analytics:
+    dependencies:
+      '@avidia/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@avidia/mastery':
+        specifier: workspace:*
+        version: link:../mastery
+    devDependencies:
+      '@babel/core':
+        specifier: ^7.26.0
+        version: 7.29.7
+      '@babel/preset-env':
+        specifier: ^7.26.0
+        version: 7.29.7(@babel/core@7.29.7)
+      '@babel/preset-typescript':
+        specifier: ^7.26.0
+        version: 7.29.7(@babel/core@7.29.7)
+      '@types/jest':
+        specifier: ^29.5.14
+        version: 29.5.14
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@22.20.1)
       typescript:
         specifier: ~6.0.3
         version: 6.0.3

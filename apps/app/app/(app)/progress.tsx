@@ -1,5 +1,11 @@
-import { PlaceholderScreen } from '../../src/ui/components';
+import { AnalyticsCoursePickerScreen } from '../../src/features/analytics/screens/AnalyticsCoursePickerScreen';
 
+/** Progress tab (M12): per-course analytics behind a course chooser. */
 export default function ProgressScreen() {
-  return <PlaceholderScreen title="Progress" milestone="M12 — progress analytics" />;
+  return (
+    <AnalyticsCoursePickerScreen
+      title="Progress"
+      description="Pick a course to see your mastery map, trends and exam readiness."
+    />
+  );
 }

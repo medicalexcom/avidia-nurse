@@ -24,8 +24,8 @@ export interface NavDestination {
 export const NAV_DESTINATIONS: readonly NavDestination[] = [
   { href: '/home', label: 'Home', glyph: '⌂', placeholder: false },
   { href: '/courses', label: 'Courses', glyph: '▤', placeholder: false },
-  { href: '/study', label: 'Study', glyph: '✎', placeholder: true },
-  { href: '/weaknesses', label: 'Weaknesses', glyph: '◎', placeholder: true },
-  { href: '/progress', label: 'Progress', glyph: '↗', placeholder: true },
+  { href: '/study', label: 'Study', glyph: '✎', placeholder: false },
+  { href: '/weaknesses', label: 'Weaknesses', glyph: '◎', placeholder: false },
+  { href: '/progress', label: 'Progress', glyph: '↗', placeholder: false },
   { href: '/profile', label: 'Profile', glyph: '●', placeholder: false },
 ] as const;

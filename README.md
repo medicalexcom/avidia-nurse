@@ -5,8 +5,35 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M10 — Advanced Study Modes, Clinical Drills, and Learning-Centered
-Gamification.** Five study modes now sit beside daily study, all built from the SAME validated
+**Current milestone: M12 — Learning Analytics, Readiness, and Performance Intelligence.** The
+Progress and Weaknesses tabs are now live: every course gets an actionable analytics page built
+on a new pure read model (`@avidia/analytics`) that CONSUMES the M8 mastery engine rather than
+duplicating it — mastery states, review schedules, and study priorities are computed by the one
+existing engine, and analytics only interprets its outputs. The page answers "how am I doing and
+what should I do next": a mastery map over the five M8 states, evidence-backed needs-attention
+and strengths lists (unassessed is never called weak, and every flag carries its reason),
+deterministic week-over-week trends that refuse to judge tiny samples, cognitive-level and
+difficulty breakdowns, supportive confidence calibration, exam readiness as an honest state
+(Early days / Building / On track / Strong position) with WHY reasons, a coverage-versus-mastery
+distinction, and NEVER a grade prediction, plus study consistency from attempt timestamps,
+mode/medication/simulation aggregates (via one compact read-only RPC that keeps hidden case
+internals server-side), clinical judgment shown side-by-side without a blended score, and up to
+three deterministic insights whose CTAs route into the existing engines. All minimum-evidence
+thresholds live in one documented module; the whole layer is deterministic, LLM-free, bounded
+in what it fetches, and covered by golden synthetic-student tests, DST-crossing timezone tests,
+and data-integrity tests.
+
+Previous milestone — M11, Stateful Patient Simulation and the Virtual Clinical Engine: the
+blueprint's virtual patient arrived as a deterministic, server-authoritative engine — THE LLM IS
+NOT THE SIMULATION ENGINE. Patient state, action validity, transitions, critical events,
+scoring, and outcomes are structured case data interpreted by versioned, replayable code
+(`packages/simulation`), with sessions pinned to the exact definition snapshot they started
+under, redacted client views (hidden findings and rules never leave the server), idempotent
+action submission, NCSBN-CJMM-aligned deterministic scoring, a full post-completion debrief, and
+simulation evidence flowing into the ONE existing M8 mastery model — never a parallel one.
+
+Previous milestone — M10, Advanced Study Modes, Clinical Drills, and Learning-Centered
+Gamification: Five study modes sit beside daily study, all built from the SAME validated
 question bank and scored by the SAME server pipeline that feeds the single mastery model:
 Rapid Response (foundational recall — speed never changes mastery), Find the Danger (spotting
 the highest-risk cue), Who First? (defensible prioritization drills), Medication Lab

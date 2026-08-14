@@ -143,6 +143,9 @@
  *   56. The debrief is refused while the session is still active.
  *   57. Course deletion cascades to simulation sessions and their action
  *       history — no orphaned clinical state.
+ *   58. (M12) get_simulation_analytics returns compact scored aggregates for
+ *       the owner's completed sessions only — it leaks no hidden findings,
+ *       user B is refused on A's course, and anonymous clients are refused.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -1795,6 +1798,81 @@ try {
     p_session_id: simSessionId,
   });
   check('debrief is refused while the session is still active', Boolean(simDebriefEarly.error));
+
+  // 58 (M12). get_simulation_analytics: compact per-completed-session
+  // aggregates for the OWNER's course only. The session is completed via a
+  // service-role update (the deterministic play-through is exercised by the
+  // engine suite; here we only need a completed row) with a minimal valid
+  // score, then: the owner sees exactly one aggregate row with no hidden
+  // case internals (leak probe reuses check 51's hidden finding), user B is
+  // refused on A's course, and anonymous clients are refused outright.
+  const simDefRow = await admin
+    .from('simulation_sessions')
+    .select('definition')
+    .eq('id', simSessionId)
+    .single();
+  const simFirstOutcome = (simDefRow.data?.definition?.outcomes ?? [])[0];
+  const simAnalyticsScore = {
+    algorithmVersion: 1,
+    dimensions: {
+      recognize_cues: { earned: 2, possible: 3 },
+      analyze_cues: { earned: 0, possible: 0 },
+      prioritize_hypotheses: { earned: 0, possible: 0 },
+      generate_solutions: { earned: 0, possible: 0 },
+      take_action: { earned: 1, possible: 2 },
+      evaluate_outcomes: { earned: 0, possible: 1 },
+    },
+    entries: [],
+    earned: 3,
+    possible: 6,
+    missedCriticalActions: [{ criticalId: 'authz_crit', label: 'Authz fixture critical' }],
+    unsafeActionsTaken: [],
+  };
+  const simComplete = await admin
+    .from('simulation_sessions')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      outcome_id: simFirstOutcome?.id ?? 'timeout',
+      score: simAnalyticsScore,
+    })
+    .eq('id', simSessionId)
+    .select('id, status')
+    .single();
+  const simAnalyticsOwn = await a.client.rpc('get_simulation_analytics', {
+    p_course_id: courseId,
+  });
+  const simAnalyticsSessions = simAnalyticsOwn.data?.sessions ?? [];
+  const simAnalyticsRow = simAnalyticsSessions[0];
+  const simAnalyticsSerialized = JSON.stringify(simAnalyticsOwn.data ?? {});
+  check(
+    'owner reads compact simulation analytics for own course (spec Z/AK)',
+    simComplete.data?.status === 'completed' &&
+      !simAnalyticsOwn.error &&
+      simAnalyticsSessions.length === 1 &&
+      simAnalyticsRow?.caseKey === 'postop_pe' &&
+      simAnalyticsRow?.criticalMissedCount === 1 &&
+      simAnalyticsRow?.unsafeActionCount === 0 &&
+      simAnalyticsRow?.dimensions?.recognize_cues?.possible === 3,
+    simAnalyticsOwn.error?.message
+  );
+  check(
+    'simulation analytics leaks no hidden case internals (spec N/Z)',
+    !simAnalyticsSerialized.includes('circumoral cyanosis') &&
+      !simAnalyticsSerialized.includes('"rules"') &&
+      !simAnalyticsSerialized.includes('"findings"')
+  );
+  const simAnalyticsCross = await b.client.rpc('get_simulation_analytics', {
+    p_course_id: courseId,
+  });
+  check(
+    "user B cannot read simulation analytics for A's course (spec AO)",
+    Boolean(simAnalyticsCross.error)
+  );
+  const simAnalyticsAnon = await userClient().rpc('get_simulation_analytics', {
+    p_course_id: courseId,
+  });
+  check('anonymous client cannot call get_simulation_analytics', Boolean(simAnalyticsAnon.error));
 
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client

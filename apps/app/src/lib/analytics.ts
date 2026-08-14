@@ -27,7 +27,11 @@ export type AnalyticsEvent =
   | { name: 'simulation_started'; caseKey: string; resumed: boolean }
   | { name: 'simulation_completed'; caseKey: string; outcomeKind: string; durationMinutes: number }
   | { name: 'simulation_abandoned'; caseKey: string }
-  | { name: 'hint_used'; caseKey: string };
+  | { name: 'hint_used'; caseKey: string }
+  // M12 (spec AM): the ONLY analytics-page event, and it is payload-free by
+  // construction — no metric, mastery number, readiness state or course
+  // content can ride along to any transport.
+  | { name: 'analytics_viewed' };
 
 const MAX_BUFFERED_EVENTS = 200;
 const buffer: AnalyticsEvent[] = [];

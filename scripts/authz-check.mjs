@@ -92,6 +92,20 @@
  *   40. Feedback is stored but never auto-applied (spec AH); B cannot flag A's
  *       question; deleting a document retires evidence-less course-grounded
  *       questions; course deletion cascades to ALL M7 tables.
+ *
+ * M8 checks (spec AC/AD/AE/Z/AA): mastery engine.
+ *   41. Scoring a concept-linked attempt transactionally creates/updates the
+ *       concept_mastery aggregate with the exact versioned v1 arithmetic, and
+ *       writes exactly one auditable mastery_event per attempt; the refused
+ *       double-submit never double-updates mastery (idempotency, spec AC).
+ *   42. Owners read their OWN mastery rows and event history; user B and
+ *       anonymous clients read NOTHING even with exact guessed ids (spec AD).
+ *   43. There is NO client write path: concept_mastery and mastery_events
+ *       reject all direct inserts/updates/deletes — the submit RPC is the
+ *       sole writer (spec AD/Z).
+ *   44. The M8 'adaptive' session type is accepted for owners, unknown types
+ *       are rejected, and B cannot start adaptive sessions under A's course;
+ *       course deletion cascades to concept_mastery and mastery_events.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -1227,6 +1241,187 @@ try {
     sessionClose.error?.message
   );
 
+  // ── M8: mastery engine security + correctness (spec AC/AD/AE/Z/AA) ──────
+
+  // 41. Both scored attempts above hit concept-linked questions, so the RPC
+  // must have created ONE concept_mastery row for the furosemide concept
+  // (furosemideId from the M6 section above) and exactly one mastery event
+  // per attempt — with the versioned v1 arithmetic.
+  const masteryRow = (
+    await admin
+      .from('concept_mastery')
+      .select(
+        'user_id, concept_id, mastery, attempts_count, correct_count, misconception_severity, review_stage, next_review_at, algorithm_version'
+      )
+      .eq('course_id', courseId)
+      .eq('user_id', a.id)
+      .eq('concept_id', furosemideId)
+      .maybeSingle()
+  ).data;
+  // v1 replay of the two attempts: SBA correct moderate/application/
+  // pretty_sure (weight 1.1 → +0.25 capped), then numeric correct easy/
+  // application/no-confidence (weight 0.88 → +0.198) ⇒ mastery 0.448.
+  const close = (x, y) => typeof x === 'number' && Math.abs(x - y) < 1e-6;
+  check(
+    'submitting attempts creates the concept_mastery aggregate via the RPC',
+    Boolean(masteryRow) &&
+      masteryRow.attempts_count === 2 &&
+      masteryRow.correct_count === 2 &&
+      close(Number(masteryRow.mastery), 0.448) &&
+      close(Number(masteryRow.misconception_severity), 0) &&
+      masteryRow.review_stage === 2 &&
+      masteryRow.next_review_at !== null &&
+      masteryRow.algorithm_version === 1,
+    masteryRow ? JSON.stringify(masteryRow) : 'row missing'
+  );
+  const masteryEvents = (
+    await admin
+      .from('mastery_events')
+      .select('attempt_id, evidence_weight, mastery_before, mastery_after, algorithm_version')
+      .eq('course_id', courseId)
+      .eq('concept_id', furosemideId)
+      .order('created_at', { ascending: true })
+  ).data;
+  check(
+    'each scored attempt produced exactly one auditable mastery event (spec Z/AC)',
+    (masteryEvents ?? []).length === 2 &&
+      new Set(masteryEvents.map((e) => e.attempt_id)).size === 2 &&
+      close(Number(masteryEvents[0].mastery_before), 0) &&
+      close(Number(masteryEvents[0].mastery_after), 0.25) &&
+      close(Number(masteryEvents[0].evidence_weight), 1.1) &&
+      close(Number(masteryEvents[1].mastery_before), 0.25) &&
+      close(Number(masteryEvents[1].mastery_after), 0.448) &&
+      close(Number(masteryEvents[1].evidence_weight), 0.88) &&
+      masteryEvents.every((e) => e.algorithm_version === 1),
+    JSON.stringify(masteryEvents ?? [])
+  );
+  // The refused double-submit and the denied B/anon RPC calls above must not
+  // have advanced mastery: still exactly two attempts counted (spec AC).
+  check(
+    'refused double-submit never double-updates mastery (spec AC)',
+    masteryRow?.attempts_count === 2 && (masteryEvents ?? []).length === 2
+  );
+
+  // 42. Owners read their OWN mastery; B and anonymous read nothing even
+  // with exact guessed ids (spec AD); nothing here ever goes to an AI
+  // provider — it is plain owner-scoped rows (spec AE).
+  const ownMastery = await a.client
+    .from('concept_mastery')
+    .select('concept_id, mastery, attempts_count, review_stage, next_review_at')
+    .eq('course_id', courseId);
+  check(
+    'owner reads own concept_mastery rows',
+    (ownMastery.data ?? []).length === 1 && ownMastery.data?.[0]?.concept_id === furosemideId,
+    ownMastery.error?.message
+  );
+  const ownEvents = await a.client
+    .from('mastery_events')
+    .select('attempt_id, mastery_before, mastery_after')
+    .eq('course_id', courseId);
+  check(
+    'owner reads own mastery event history (spec Z)',
+    (ownEvents.data ?? []).length === 2,
+    ownEvents.error?.message
+  );
+  const bMastery = await b.client
+    .from('concept_mastery')
+    .select('mastery')
+    .eq('concept_id', furosemideId);
+  check(
+    "user cannot read another user's mastery by guessed concept id",
+    (bMastery.data ?? []).length === 0
+  );
+  const bEvents = await b.client.from('mastery_events').select('id').eq('course_id', courseId);
+  check("user cannot read another user's mastery events", (bEvents.data ?? []).length === 0);
+  const anonMastery = await userClient()
+    .from('concept_mastery')
+    .select('mastery')
+    .eq('concept_id', furosemideId);
+  check('anonymous client reads no mastery rows', (anonMastery.data ?? []).length === 0);
+  const anonEvents = await userClient().from('mastery_events').select('id');
+  check('anonymous client reads no mastery events', (anonEvents.data ?? []).length === 0);
+
+  // 43. There is NO client write path: the RPC is the sole writer (spec AD).
+  const masteryIns = await a.client.from('concept_mastery').insert({
+    user_id: a.id,
+    course_id: courseId,
+    concept_id: furosemideId,
+    mastery: 1,
+  });
+  check('client cannot insert concept_mastery directly', Boolean(masteryIns.error));
+  const masteryUpd = await a.client
+    .from('concept_mastery')
+    .update({ mastery: 1 })
+    .eq('concept_id', furosemideId)
+    .select('concept_id');
+  check(
+    'client cannot update own concept_mastery',
+    Boolean(masteryUpd.error) || (masteryUpd.data ?? []).length === 0
+  );
+  const masteryDel = await a.client
+    .from('concept_mastery')
+    .delete()
+    .eq('concept_id', furosemideId)
+    .select('concept_id');
+  check(
+    'client cannot delete concept_mastery',
+    Boolean(masteryDel.error) || (masteryDel.data ?? []).length === 0
+  );
+  const eventForge = await a.client.from('mastery_events').insert({
+    attempt_id: crypto.randomUUID(),
+    user_id: a.id,
+    course_id: courseId,
+    concept_id: furosemideId,
+    is_correct: true,
+    evidence_weight: 2,
+    mastery_before: 0,
+    mastery_after: 1,
+    misconception_severity_after: 0,
+    review_stage_after: 4,
+    next_review_at: new Date().toISOString(),
+    algorithm_version: 1,
+  });
+  check('client cannot forge mastery_events', Boolean(eventForge.error));
+  const eventUpd = await a.client
+    .from('mastery_events')
+    .update({ mastery_after: 1 })
+    .eq('course_id', courseId)
+    .select('id');
+  check(
+    'client cannot rewrite mastery history (spec Z immutability)',
+    Boolean(eventUpd.error) || (eventUpd.data ?? []).length === 0
+  );
+
+  // 44. The 'adaptive' session type added in M8 is accepted for owners and
+  // invalid types are still rejected by the check constraint.
+  const adaptiveIns = await a.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'adaptive', planned_question_count: 5 })
+    .select('id, session_type, status')
+    .single();
+  check(
+    "owner starts an 'adaptive' session (M8 session type)",
+    !adaptiveIns.error && adaptiveIns.data?.session_type === 'adaptive',
+    adaptiveIns.error?.message
+  );
+  if (adaptiveIns.data?.id) {
+    await a.client
+      .from('study_sessions')
+      .update({ status: 'abandoned', completed_at: new Date().toISOString() })
+      .eq('id', adaptiveIns.data.id);
+  }
+  const badTypeIns = await a.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'cramming', planned_question_count: 5 });
+  check('unknown session types are still rejected', Boolean(badTypeIns.error));
+  const bAdaptiveIns = await b.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'adaptive', planned_question_count: 5 });
+  check(
+    "user cannot start an adaptive session under another user's course",
+    Boolean(bAdaptiveIns.error)
+  );
+
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client
     .from('question_feedback')
@@ -1498,6 +1693,16 @@ try {
     .from('question_feedback')
     .select('id')
     .eq('course_id', courseId);
+  // 44 (cont.) The mastery layer must also be gone (spec AD): aggregates and
+  // the audit history die with the course.
+  const orphanMastery = await admin
+    .from('concept_mastery')
+    .select('concept_id')
+    .eq('course_id', courseId);
+  const orphanMasteryEvents = await admin
+    .from('mastery_events')
+    .select('id')
+    .eq('course_id', courseId);
   check(
     'course delete cascades to modules, exams, exam_modules, documents, sections, chunks, concepts and the assessment layer',
     (orphanModules.data ?? []).length === 0 &&
@@ -1515,7 +1720,9 @@ try {
       (orphanQuestionSources.data ?? []).length === 0 &&
       (orphanSessions.data ?? []).length === 0 &&
       (orphanAttempts.data ?? []).length === 0 &&
-      (orphanFeedback.data ?? []).length === 0
+      (orphanFeedback.data ?? []).length === 0 &&
+      (orphanMastery.data ?? []).length === 0 &&
+      (orphanMasteryEvents.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

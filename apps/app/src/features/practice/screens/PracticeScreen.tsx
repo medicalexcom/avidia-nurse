@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { buildSessionQuestionOrder } from '@avidia/assessment/src/mix';
+import { buildAdaptiveQuestionOrder, rankConcepts } from '@avidia/mastery';
 import {
   CONFIDENCE_LEVELS,
   CONFIDENCE_LEVEL_LABELS,
@@ -19,6 +20,16 @@ import { getSupabase } from '../../../lib/supabase';
 import { ErrorBanner, PrimaryButton, Screen, SecondaryButton } from '../../../ui/components';
 import { colors, spacing } from '../../../ui/theme';
 import { fetchOwnCourse, type Course } from '../../courses/coursesApi';
+import { listConcepts } from '../../concepts/conceptsApi';
+import { useUserTimezone } from '../../profile/useTimezone';
+import {
+  buildConceptSnapshots,
+  listConceptMastery,
+  listCourseAttempts,
+  listCourseExams,
+  seenQuestionIds,
+  toUpcomingExams,
+} from '../../study/studyApi';
 import {
   closeStudySession,
   createStudySession,
@@ -36,9 +47,12 @@ import {
  *
  *   setup → one question at a time → locked answer + rationale → results
  *
- * Selection is deterministic-random, balanced across concepts, and NOT
- * adaptive (spec V/Z/AL): the session id seeds the mix, so refreshing cannot
- * reshuffle answered questions. Answers are immutable once submitted (spec W)
+ * In the default 'practice' mode, selection is deterministic-random and
+ * balanced across concepts (M7 spec V/Z/AL). In 'adaptive' mode (M8 spec
+ * U/V/W) the pure @avidia/mastery engine ranks concepts from the student's
+ * own rows and picks mastery-appropriate questions from the persisted bank —
+ * still fully deterministic (the session id seeds both modes) and never an
+ * AI call. Answers are immutable once submitted (spec W)
  * — there is no "change answer", and the correct answer plus rationales exist
  * client-side only after the server has locked the attempt in. Results are a
  * plain score with per-question review, with no mastery or weakness labels
@@ -60,8 +74,15 @@ type Phase =
   | { name: 'question'; index: number; result: AttemptResult | null }
   | { name: 'results' };
 
-export function PracticeScreen({ courseId }: { courseId: string }) {
+export function PracticeScreen({
+  courseId,
+  mode = 'practice',
+}: {
+  courseId: string;
+  mode?: 'practice' | 'adaptive';
+}) {
   const { user } = useAuth();
+  const timeZone = useUserTimezone();
   const [course, setCourse] = useState<Course | null>(null);
   const [pool, setPool] = useState<PracticeQuestionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -114,23 +135,55 @@ export function PracticeScreen({ courseId }: { courseId: string }) {
     if (!client) return;
     const count = Math.min(requested, pool.length, MAX_SESSION_QUESTIONS);
     try {
-      const created = await createStudySession(client, courseId, count);
-      // The session id seeds the deterministic mix (spec V/Z): reproducible
-      // for this session, different for the next one.
-      const mixed = buildSessionQuestionOrder(
-        pool.map((question) => ({
-          id: question.id,
-          conceptId: question.concept_id,
-          questionType: question.question_type,
-          difficulty: question.difficulty,
-        })),
-        count,
-        created.id
-      );
+      const created = await createStudySession(client, courseId, count, mode);
+      // The session id seeds the deterministic order (M7 spec V/Z, M8 spec
+      // V/AB): reproducible for this session, different for the next one.
+      let orderedIds: string[];
+      if (mode === 'adaptive') {
+        // Adaptive selection (M8 spec U/V/W): rank concepts with the pure
+        // mastery engine from the student's own rows, then pick from the
+        // PERSISTED question bank — no AI call is ever made here (spec V/Y).
+        const [concepts, masteryRows, attempts, exams] = await Promise.all([
+          listConcepts(client, courseId),
+          listConceptMastery(client, courseId),
+          listCourseAttempts(client, courseId),
+          listCourseExams(client, courseId),
+        ]);
+        const ranked = rankConcepts({
+          concepts: buildConceptSnapshots(concepts, pool, masteryRows, attempts),
+          exams: toUpcomingExams(exams),
+          timeZone,
+          now: new Date(),
+        });
+        const seen = seenQuestionIds(attempts);
+        orderedIds = buildAdaptiveQuestionOrder({
+          questions: pool.map((question) => ({
+            questionId: question.id,
+            conceptId: question.concept_id,
+            difficulty: question.difficulty,
+            cognitiveLevel: question.cognitive_level,
+            seen: seen.has(question.id),
+          })),
+          ranked,
+          sessionSize: count,
+          seed: created.id,
+        });
+      } else {
+        orderedIds = buildSessionQuestionOrder(
+          pool.map((question) => ({
+            id: question.id,
+            conceptId: question.concept_id,
+            questionType: question.question_type,
+            difficulty: question.difficulty,
+          })),
+          count,
+          created.id
+        ).map((item) => item.id);
+      }
       const byId = new Map(pool.map((question) => [question.id, question]));
       setSession(created);
       setAnswers([]);
-      setOrdered(mixed.map((item) => byId.get(item.id)!));
+      setOrdered(orderedIds.map((id) => byId.get(id)!));
       questionShownAt.current = Date.now();
       setPhase({ name: 'question', index: 0, result: null });
     } catch {
@@ -195,9 +248,11 @@ export function PracticeScreen({ courseId }: { courseId: string }) {
     setPhase(answers.length > 0 ? { name: 'results' } : { name: 'setup' });
   };
 
+  const modeTitle = mode === 'adaptive' ? 'Adaptive study' : 'Practice';
+
   if (phase.name === 'loading') {
     return (
-      <Screen title="Practice">
+      <Screen title={modeTitle}>
         <Text style={styles.muted}>Loading practice questions…</Text>
       </Screen>
     );
@@ -205,7 +260,7 @@ export function PracticeScreen({ courseId }: { courseId: string }) {
 
   if (!course) {
     return (
-      <Screen title="Practice">
+      <Screen title={modeTitle}>
         <ErrorBanner message={error} />
         <SecondaryButton label="Retry" onPress={load} />
         <SecondaryButton label="Back to courses" onPress={() => router.replace('/courses')} />
@@ -215,7 +270,7 @@ export function PracticeScreen({ courseId }: { courseId: string }) {
 
   if (phase.name === 'setup') {
     return (
-      <Screen title={`Practice — ${course.title}`}>
+      <Screen title={`${modeTitle} — ${course.title}`}>
         <ErrorBanner message={error} />
         {error ? <SecondaryButton label="Retry" onPress={load} /> : null}
         {pool.length === 0 ? (
@@ -233,8 +288,10 @@ export function PracticeScreen({ courseId }: { courseId: string }) {
           <>
             <Text style={styles.intro}>
               {pool.length} question{pool.length === 1 ? '' : 's'} available from your course
-              materials. Choose a session length — questions are mixed across the topics your
-              materials cover.
+              materials. Choose a session length —{' '}
+              {mode === 'adaptive'
+                ? 'questions are picked for the topics that most need your attention right now.'
+                : 'questions are mixed across the topics your materials cover.'}
             </Text>
             <View style={styles.choiceRow}>
               {SESSION_SIZE_CHOICES.filter((size, index) => size <= pool.length || index === 0).map(

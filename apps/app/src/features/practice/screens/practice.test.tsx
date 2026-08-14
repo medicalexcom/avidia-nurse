@@ -46,9 +46,24 @@ jest.mock('../practiceApi', () => ({
   closeStudySession: jest.fn(),
   submitQuestionFeedback: jest.fn(),
 }));
+jest.mock('../../concepts/conceptsApi', () => ({
+  listConcepts: jest.fn(),
+}));
+jest.mock('../../profile/useTimezone', () => ({
+  useUserTimezone: () => 'America/Chicago',
+}));
+// Keep the pure assembly helpers real; mock only the fetchers (M8 adaptive).
+jest.mock('../../study/studyApi', () => ({
+  ...jest.requireActual('../../study/studyApi'),
+  listConceptMastery: jest.fn(),
+  listCourseAttempts: jest.fn(),
+  listCourseExams: jest.fn(),
+}));
 
 import * as coursesApi from '../../courses/coursesApi';
+import * as conceptsApi from '../../concepts/conceptsApi';
 import * as practiceApi from '../practiceApi';
+import * as studyApi from '../../study/studyApi';
 
 const mocked = <T,>(fn: T) => fn as jest.Mock;
 
@@ -291,5 +306,70 @@ describe('PracticeScreen session flow (spec V/W/X)', () => {
     await screen.findByText('Back to course');
     await fireEvent.press(screen.getByText('Back to course'));
     expect(mockRouter.push).toHaveBeenCalledWith('/course/course-1');
+  });
+});
+
+describe('PracticeScreen adaptive mode (M8 spec U/V/W)', () => {
+  const concepts = [
+    {
+      id: 'concept-1',
+      course_id: 'course-1',
+      canonical_name: 'Hyperkalemia management',
+      concept_type: 'condition',
+      summary: null,
+      status: 'active',
+      emphasis_score: 8,
+      source_count: 2,
+    },
+    {
+      id: 'concept-2',
+      course_id: 'course-1',
+      canonical_name: 'Dosage calculation',
+      concept_type: 'skill',
+      summary: null,
+      status: 'active',
+      emphasis_score: 4,
+      source_count: 1,
+    },
+  ];
+
+  beforeEach(() => {
+    mocked(conceptsApi.listConcepts).mockResolvedValue(concepts);
+    mocked(studyApi.listConceptMastery).mockResolvedValue([]);
+    mocked(studyApi.listCourseAttempts).mockResolvedValue([]);
+    mocked(studyApi.listCourseExams).mockResolvedValue([]);
+  });
+
+  it('creates an adaptive session and orders the persisted bank without any AI call', async () => {
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion, calcQuestion]);
+    mocked(practiceApi.createStudySession).mockResolvedValue({
+      ...session,
+      session_type: 'adaptive',
+    });
+    await render(<PracticeScreen courseId="course-1" mode="adaptive" />);
+    await screen.findByText(/Adaptive study — Adult Health I/);
+    expect(screen.getByText(/picked for the topics that most need your attention/)).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('2 questions'));
+    await screen.findByText('Question 1 of 2');
+
+    // The session row was created as 'adaptive'…
+    expect(mocked(practiceApi.createStudySession).mock.calls[0]![3]).toBe('adaptive');
+    // …and selection used only the student's own persisted rows.
+    expect(conceptsApi.listConcepts).toHaveBeenCalled();
+    expect(studyApi.listConceptMastery).toHaveBeenCalled();
+    expect(studyApi.listCourseAttempts).toHaveBeenCalled();
+    expect(studyApi.listCourseExams).toHaveBeenCalled();
+  });
+
+  it('in practice mode, never touches mastery or exam data (M7 behavior preserved)', async () => {
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion, calcQuestion]);
+    await render(<PracticeScreen courseId="course-1" />);
+    await screen.findByText('2 questions');
+    await fireEvent.press(screen.getByText('2 questions'));
+    await screen.findByText('Question 1 of 2');
+    expect(mocked(practiceApi.createStudySession).mock.calls[0]![3]).toBe('practice');
+    expect(studyApi.listConceptMastery).not.toHaveBeenCalled();
+    expect(studyApi.listCourseExams).not.toHaveBeenCalled();
   });
 });

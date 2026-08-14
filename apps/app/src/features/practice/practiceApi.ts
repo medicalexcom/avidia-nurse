@@ -71,6 +71,18 @@ export interface AttemptResult {
   answer_unit: string | null;
   rounding_note: string | null;
   options: RevealedOption[];
+  /**
+   * M8: coarse mastery echo from the transactional update (null for
+   * concept-less questions). The UI deliberately shows only the state label,
+   * never the number (spec AG — no fake precision).
+   */
+  mastery?: {
+    concept_id: string;
+    mastery: number;
+    review_stage: number;
+    next_review_at: string;
+    algorithm_version: number;
+  } | null;
 }
 
 /** Response payloads mirror the SQL scorer's expected JSON shapes (spec P). */
@@ -108,17 +120,22 @@ export async function listActiveQuestions(
   });
 }
 
-/** Start a practice session (spec T/V). course ownership enforced by RLS. */
+/**
+ * Start a practice or adaptive session (M7 spec T/V; M8 spec U/V). Course
+ * ownership is enforced by RLS; the session_type check constraint (migration
+ * 0008) allows exactly 'practice' and 'adaptive'.
+ */
 export async function createStudySession(
   client: SupabaseClient,
   courseId: string,
-  plannedQuestionCount: number
+  plannedQuestionCount: number,
+  sessionType: 'practice' | 'adaptive' = 'practice'
 ): Promise<StudySessionRow> {
   const { data, error } = await client
     .from('study_sessions')
     .insert({
       course_id: courseId,
-      session_type: 'practice',
+      session_type: sessionType,
       planned_question_count: plannedQuestionCount,
     })
     .select('id, course_id, session_type, status, planned_question_count, started_at, completed_at')

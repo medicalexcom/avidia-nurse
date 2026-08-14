@@ -16,6 +16,7 @@
     "@avidia/assessment": "workspace:*",
     "@avidia/config": "workspace:*",
     "@avidia/domain": "workspace:*",
+    "@avidia/mastery": "workspace:*",
     "@avidia/rag": "workspace:*",
     "@expo/metro-runtime": "~57.0.9",
     "@react-native-async-storage/async-storage": "2.2.0",

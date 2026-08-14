@@ -5,22 +5,22 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M7 — Nursing Question and Assessment Engine.** The course knowledge model
-now feeds a source-grounded question pipeline: the worker generates NCLEX-style items (single
-best answer, select-all-that-apply, ordered response, numeric calculation) from the student's own
-concepts and chunks through a provider-independent gateway (OpenAI `gpt-4o-mini` strict JSON
-schema, plus a deterministic scripted mode), then validates every item BEFORE persistence —
-option-count and correctness invariants, answer-leakage and distractor-quality checks, stricter
-safety review for high-alert topics (insulin, anticoagulants, dosing, emergencies), content-hash
-dedup and a generation fingerprint so unchanged material never re-bills the AI. Questions carry
-teaching rationales (including per-distractor), question↔chunk provenance, cognitive levels up to
-prioritization, and an honest `course_grounded` vs `general_knowledge` label. Students practice in
-deterministic, non-adaptive sessions: answers are scored **server-side** by a SECURITY DEFINER
-RPC (dosage math is stored data, never AI arithmetic at answer time), locked immutably, and only
-then are rationales revealed — the correct answers are not even selectable columns for clients.
-Results are plain counts (no mastery or "weak area" labels), flagging a question never auto-changes
-it, and studying never requires a live LLM. Mastery, adaptivity and spaced repetition remain
-later milestones.
+**Current milestone: M8 — Adaptive Mastery Engine and Intelligent Study Scheduler.** Every
+scored answer now updates a per-concept mastery model — and THE LLM IS NOT THE MASTERY ENGINE:
+all mastery math is deterministic, versioned (`algorithm_version = 1`), unit-tested code that
+runs identically with zero AI configuration, and no mastery data ever leaves the student's own
+database rows. The pure `@avidia/mastery` package implements bounded diminishing updates weighted
+by difficulty, cognitive level, and confidence calibration (honesty about guessing is never
+punished; confident errors raise a misconception signal), explainable spaced repetition on a
+fixed, visible interval ladder (1 day → 1 month — no SM-2 opacity), five non-stigmatizing
+mastery states (a new concept is "New", never "failing"), and a versioned priority model
+(exam proximity × weakness × forgetting risk × course emphasis × misconception × transfer need)
+whose reason codes ARE the explanation — no LLM writes them. The scoring RPC applies the same
+arithmetic transactionally (constant-for-constant mirror, idempotent per attempt, append-only
+audit events), and the app gains a minimal study dashboard (next exam countdown, ONE recommended
+action with honest reasons, coarse state groups — never a percentage or prediction) plus an
+adaptive session mode that deterministically orders real questions from the persisted bank with
+diversity bounds. Progress analytics, gamification, and predictions remain later milestones.
 
 ## Repository structure
 
@@ -33,7 +33,7 @@ avidia-nurse/
 │   │   └── src/
 │   │       ├── config/     # Validated environment configuration
 │   │       ├── lib/        # Supabase client (session persistence, token refresh)
-│   │       ├── features/   # auth, profile, courses, materials, concepts, practice
+│   │       ├── features/   # auth, profile, courses, materials, concepts, practice, study
 │   │       └── ui/         # Theme, shared components, responsive navigation shell
 │   └── worker/             # Background worker (service role, Node/tsx): extracts queued
 │                           # documents into sections, chunks + embeds ready documents into
@@ -52,10 +52,14 @@ avidia-nurse/
 │   │                       # fingerprint cost gate, batching, nursing eval fixtures
 │   ├── rag/                # Semantic chunking, embedding providers (provider-agnostic),
 │   │                       # course-scoped retriever, grounding-context builder, eval set
-│   └── assessment/         # Question engine: strict item schema + validation pipeline,
-│                           # provider-agnostic generation gateway, deterministic scoring,
-│                           # content-hash dedup, fingerprint cost gate, session mixing,
-│                           # synthetic nursing eval fixtures
+│   ├── assessment/         # Question engine: strict item schema + validation pipeline,
+│   │                       # provider-agnostic generation gateway, deterministic scoring,
+│   │                       # content-hash dedup, fingerprint cost gate, session mixing,
+│   │                       # synthetic nursing eval fixtures
+│   └── mastery/            # Pure adaptive mastery engine (no AI, no DB, no clock reads):
+│                           # versioned update rule, explainable spaced-repetition ladder,
+│                           # mastery states, exam urgency, priority + recommendation
+│                           # reason codes, seeded deterministic question selection
 ├── docs/
 │   ├── product/                 # The three governing specification documents
 │   ├── architecture-decisions/  # ADRs — why the architecture is the way it is

@@ -500,3 +500,78 @@ describe('PracticeScreen adaptive mode (M8 spec U/V/W)', () => {
     expect(studyApi.listCourseExams).not.toHaveBeenCalled();
   });
 });
+
+describe('PracticeScreen study modes (M10 spec B/S/T/C)', () => {
+  const prioritizationPool: PracticeQuestionRow[] = [1, 2, 3, 4].map((n) => ({
+    ...sbaQuestion,
+    id: `who-${n}`,
+    stem: `Prioritization drill ${n}: which client should the nurse see first?`,
+  }));
+
+  beforeEach(() => {
+    mocked(conceptsApi.listConcepts).mockResolvedValue([]);
+  });
+
+  it('shows the locked message when a mode has too few eligible questions (spec T)', async () => {
+    // The bank has questions, but none are medication-related.
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([sbaQuestion]);
+    await render(<PracticeScreen courseId="course-1" mode="medication_lab" />);
+    await screen.findByText(/Medication Lab unlocks when your course materials cover medications/);
+    expect(screen.queryByText(/questions available/)).toBeNull();
+  });
+
+  it('filters the pool, labels the session honestly, and records the mode session type', async () => {
+    // The calculation question has no prioritization facts — it must not
+    // appear in Who First? (spec F/N).
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue([
+      ...prioritizationPool,
+      calcQuestion,
+    ]);
+    mocked(practiceApi.createStudySession).mockResolvedValue({
+      ...session,
+      session_type: 'who_first',
+      planned_question_count: 4,
+    });
+    await render(<PracticeScreen courseId="course-1" mode="who_first" />);
+    await screen.findByText(/decide who needs the nurse first/);
+    await screen.findByText(/4 questions available from your course materials/);
+    await fireEvent.press(screen.getByText('4 questions'));
+    await screen.findByText('Question 1 of 4');
+    // The session row is honestly labeled with the mode (migration 0010).
+    expect(mocked(practiceApi.createStudySession).mock.calls[0][3]).toBe('who_first');
+    expect(bufferedEvents()).toContainEqual({ name: 'mode_session_started', mode: 'who_first' });
+    // Fixed seeded order over the eligible sub-pool only — the ineligible
+    // calculation question never appears in any position.
+    expect(screen.queryByText(/furosemide 40 mg/)).toBeNull();
+  });
+
+  it('boss battle shows its round labels from the stored plan segments (spec I/J)', async () => {
+    const bank: PracticeQuestionRow[] = [
+      ...[1, 2, 3, 4, 5].map((n) => ({
+        ...sbaQuestion,
+        id: `recall-${n}`,
+        cognitive_level: 'recall' as const,
+        priority_frameworks: [],
+      })),
+      ...[1, 2, 3].map((n) => ({
+        ...sbaQuestion,
+        id: `apply-${n}`,
+        cognitive_level: 'application' as const,
+        priority_frameworks: [],
+      })),
+    ];
+    mocked(practiceApi.listActiveQuestions).mockResolvedValue(bank);
+    mocked(practiceApi.createStudySession).mockResolvedValue({
+      ...session,
+      session_type: 'boss_battle',
+      planned_question_count: 5,
+    });
+    await render(<PracticeScreen courseId="course-1" mode="boss_battle" />);
+    await screen.findByText(/A cumulative challenge across everything/);
+    await fireEvent.press(screen.getByText('5 questions'));
+    await screen.findByText('Question 1 of 5');
+    // The first round is always Foundation when recall questions exist.
+    expect(screen.getByText('Round: Foundation')).toBeTruthy();
+    expect(mocked(practiceApi.createStudySession).mock.calls[0][3]).toBe('boss_battle');
+  });
+});

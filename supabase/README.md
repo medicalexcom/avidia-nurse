@@ -12,7 +12,7 @@ and `functions/` arrive with the milestones that give them real content.
    `0003_documents_and_storage.sql`, `0004_document_sections_and_processing.sql`,
    `0005_source_chunks_and_retrieval.sql`, `0006_concepts_and_knowledge.sql`,
    `0007_questions_and_assessment.sql`, `0008_mastery_and_scheduling.sql`,
-   `0009_daily_study_sessions.sql`).
+   `0009_daily_study_sessions.sql`, `0010_study_modes.sql`).
    Alternatively, with the Supabase CLI:
    `supabase link --project-ref <ref>` then `supabase db push`.
    Migration `0003` also creates the private `course-materials` storage bucket

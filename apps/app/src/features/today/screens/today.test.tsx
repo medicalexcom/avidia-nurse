@@ -49,6 +49,7 @@ jest.mock('../../study/studyApi', () => ({
 jest.mock('../todayApi', () => ({
   ...jest.requireActual('../todayApi'),
   listRecentSessions: jest.fn(),
+  listOwnAttemptTimes: jest.fn(),
 }));
 
 import { bufferedEvents, resetAnalytics } from '../../../lib/analytics';
@@ -110,6 +111,7 @@ beforeEach(() => {
     { id: 'exam-1', title: 'Exam 1', exam_at: '2099-09-01T14:00:00.000Z' },
   ]);
   mocked(todayApi.listRecentSessions).mockResolvedValue([]);
+  mocked(todayApi.listOwnAttemptTimes).mockResolvedValue([]);
 });
 
 describe('TodayScreen empty states (spec AD)', () => {
@@ -219,5 +221,30 @@ describe('TodayScreen action-first home (spec A/B/AE)', () => {
     expect(mockRouter.push).toHaveBeenCalledWith(
       '/course/course-1/practice?mode=adaptive&minutes=10'
     );
+  });
+});
+
+describe('TodayScreen M10 additions (modes entry + streak)', () => {
+  it('links to the study modes screen from the footer', async () => {
+    await render(<TodayScreen />);
+    await screen.findByText('Start today');
+    await fireEvent.press(screen.getByText('Study modes'));
+    expect(mockRouter.push).toHaveBeenCalledWith('/course/course-1/modes');
+  });
+
+  it('shows a quiet, non-punitive streak line derived from attempts (ADR-0027)', async () => {
+    const now = Date.now();
+    mocked(todayApi.listOwnAttemptTimes).mockResolvedValue([
+      new Date(now).toISOString(),
+      new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    ]);
+    await render(<TodayScreen />);
+    await screen.findByText('Study streak: 2 days — today counts.');
+  });
+
+  it('shows no streak line when there is nothing to show', async () => {
+    await render(<TodayScreen />);
+    await screen.findByText('Start today');
+    expect(screen.queryByText(/Study streak/)).toBeNull();
   });
 });

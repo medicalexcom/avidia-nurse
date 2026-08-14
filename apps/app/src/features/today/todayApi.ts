@@ -52,6 +52,22 @@ export async function listRecentSessions(
 }
 
 /**
+ * Timestamps of the student's own recorded answers, newest first, across
+ * ALL courses — the only input the M10 streak needs (ADR-0027). Attempts
+ * are server-written and RLS-scoped to the owner, so the streak can always
+ * be recomputed and never needs stored state.
+ */
+export async function listOwnAttemptTimes(client: SupabaseClient, limit = 400): Promise<string[]> {
+  const { data, error } = await client
+    .from('question_attempts')
+    .select('created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return ((data ?? []) as { created_at: string }[]).map((row) => row.created_at);
+}
+
+/**
  * Intelligent course default (spec P), pure and testable: prefer the ACTIVE
  * course whose next exam is soonest (exam pressure is the strongest signal
  * of "what today is about"); otherwise the most recently created active

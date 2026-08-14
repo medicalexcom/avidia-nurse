@@ -5,7 +5,23 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M9 — Daily Adaptive Study Experience.** The app now opens on a Today
+**Current milestone: M10 — Advanced Study Modes, Clinical Drills, and Learning-Centered
+Gamification.** Five study modes now sit beside daily study, all built from the SAME validated
+question bank and scored by the SAME server pipeline that feeds the single mastery model:
+Rapid Response (foundational recall — speed never changes mastery), Find the Danger (spotting
+the highest-risk cue), Who First? (defensible prioritization drills), Medication Lab
+(course-grounded pharmacology and tolerance-checked calculations), and Boss Battle (a
+cumulative challenge in Foundation → Application → Prioritization → Integrated rounds). Modes
+are pure registry entries — deterministic filters plus seeded orderings over stored question
+facts — with explicit eligibility and guiding locked states ("Medication Lab unlocks when your
+course materials cover medications"), and the only schema change is five new honest
+`session_type` labels. Gamification is exactly what the product documents approve: a streak,
+derived purely from the student's own attempt timestamps (timezone-correct, zero stored state,
+non-punitive — a run ending yesterday still counts before today's study). No XP, levels, or
+badges — the documents don't ask for them, and unapproved reward mechanics risk optimizing for
+points over learning.
+
+Previous milestone — M9, the Daily Adaptive Study Experience: The app now opens on a Today
 screen whose central action is START TODAY: the student picks how much time they have
 (5/10/20/45 minutes) and gets a planned adaptive session built from the M8 recommendations over
 the persisted, validated question bank — one question at a time, optional one-tap confidence,
@@ -50,7 +66,7 @@ avidia-nurse/
 │   │   └── src/
 │   │       ├── config/     # Validated environment configuration
 │   │       ├── lib/        # Supabase client (session persistence, token refresh)
-│   │       ├── features/   # auth, profile, courses, materials, concepts, practice, study, today
+│   │       ├── features/   # auth, profile, courses, materials, concepts, practice, study, today, modes
 │   │       └── ui/         # Theme, shared components, responsive navigation shell
 │   └── worker/             # Background worker (service role, Node/tsx): extracts queued
 │                           # documents into sections, chunks + embeds ready documents into

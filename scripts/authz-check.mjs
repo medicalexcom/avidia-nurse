@@ -118,6 +118,10 @@
  *       skip rows in A's plan.
  *   48. Closed sessions accept no new plan rows, and deleting a session
  *       cascades to its plan — no orphaned plan state survives.
+ * M10 checks (spec AK/AL): study modes.
+ *   49. The five mode session_type values are accepted for the owner's own
+ *       course, and an invented session_type is rejected by the check
+ *       constraint — session history cannot be mislabeled.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -1536,6 +1540,35 @@ try {
     .select('position')
     .eq('session_id', m9SessionId);
   check('deleting a session cascades to its plan rows', (orphanPlan.data ?? []).length === 0);
+
+  // 49. M10 mode sessions: each mode id is a valid, honestly-labeled
+  // session_type; anything else is rejected by the check constraint.
+  const modeIds = [
+    'rapid_response',
+    'find_the_danger',
+    'who_first',
+    'medication_lab',
+    'boss_battle',
+  ];
+  let modeInsertsOk = true;
+  const modeSessionIds = [];
+  for (const modeId of modeIds) {
+    const ins = await a.client
+      .from('study_sessions')
+      .insert({ course_id: courseId, session_type: modeId, planned_question_count: 4 })
+      .select('id, session_type')
+      .single();
+    if (ins.error || ins.data?.session_type !== modeId) modeInsertsOk = false;
+    if (ins.data?.id) modeSessionIds.push(ins.data.id);
+  }
+  check('all five M10 mode session types are accepted for own courses', modeInsertsOk);
+  const bogusMode = await a.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'arcade', planned_question_count: 4 });
+  check('an invented session_type is rejected by the check constraint', Boolean(bogusMode.error));
+  for (const id of modeSessionIds) {
+    await admin.from('study_sessions').delete().eq('id', id);
+  }
 
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client

@@ -18,6 +18,7 @@ import {
   QUESTION_SOURCE_TYPE_LABELS,
   QUESTION_TYPE_LABELS,
   RECOMMENDATION_REASON_LABELS,
+  type ConceptType,
   type ConfidenceLevel,
   type QuestionFeedbackReason,
 } from '@avidia/domain';
@@ -29,6 +30,15 @@ import { ErrorBanner, PrimaryButton, Screen, SecondaryButton } from '../../../ui
 import { colors, spacing } from '../../../ui/theme';
 import { fetchOwnCourse, type Course } from '../../courses/coursesApi';
 import { listConcepts } from '../../concepts/conceptsApi';
+import {
+  eligibleQuestions,
+  getMode,
+  isModeId,
+  segmentLabelAt,
+  type ModeId,
+  type ModePlan,
+  type ModeQuestion,
+} from '../../modes/registry';
 import { useUserTimezone } from '../../profile/useTimezone';
 import {
   buildConceptSnapshots,
@@ -134,6 +144,16 @@ const toSelectable =
     seen: seen.has(question.id),
   });
 
+/** The question facts the mode registry filters on (M10 spec B). */
+const toModeQuestion = (question: PracticeQuestionRow): ModeQuestion => ({
+  id: question.id,
+  conceptId: question.concept_id,
+  questionType: question.question_type,
+  difficulty: question.difficulty,
+  cognitiveLevel: question.cognitive_level,
+  priorityFrameworks: question.priority_frameworks,
+});
+
 export function PracticeScreen({
   courseId,
   mode = 'practice',
@@ -141,7 +161,8 @@ export function PracticeScreen({
   resume = false,
 }: {
   courseId: string;
-  mode?: 'practice' | 'adaptive';
+  /** M10 spec B: study modes join practice and adaptive as launch modes. */
+  mode?: 'practice' | 'adaptive' | ModeId;
   /** M9 spec B: launch directly into a session of this duration. */
   minutes?: number | null;
   /** M9 spec O: continue the open session without asking. */
@@ -149,6 +170,8 @@ export function PracticeScreen({
 }) {
   const { user } = useAuth();
   const timeZone = useUserTimezone();
+  // M10: the mode definition, when this screen was launched as a study mode.
+  const gameMode = isModeId(mode) ? getMode(mode) : null;
   const [course, setCourse] = useState<Course | null>(null);
   const [pool, setPool] = useState<PracticeQuestionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +192,10 @@ export function PracticeScreen({
   const [dueAtStart, setDueAtStart] = useState<ReadonlySet<string>>(new Set());
   const [resumable, setResumable] = useState<StudySessionRow | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  // M10 mode state: concept types feed the registry filters; the plan keeps
+  // the round labels (Boss Battle). Neither exists outside mode launches.
+  const [conceptTypesById, setConceptTypesById] = useState<Map<string, ConceptType>>(new Map());
+  const [modePlan, setModePlan] = useState<ModePlan | null>(null);
   const questionShownAt = useRef<number>(Date.now());
   const autoLaunched = useRef(false);
 
@@ -178,6 +205,18 @@ export function PracticeScreen({
     setPhase((previous) =>
       previous.name === 'loading' || previous.name === 'setup' ? { name: 'setup' } : previous
     );
+
+  // M10 spec S/T: the mode's eligible sub-pool of the validated bank. The
+  // registry filter is the single source of "does this question belong".
+  const modeRows = useMemo(() => {
+    if (!gameMode) return pool;
+    const eligibleIds = new Set(
+      eligibleQuestions(gameMode, pool.map(toModeQuestion), conceptTypesById).map(
+        (question) => question.id
+      )
+    );
+    return pool.filter((question) => eligibleIds.has(question.id));
+  }, [gameMode, pool, conceptTypesById]);
 
   /**
    * Rank the course with the pure engine from the student's own rows (M8
@@ -340,6 +379,18 @@ export function PracticeScreen({
       setCourse(c);
       setPool(questions);
       setError(c ? null : 'This course could not be found.');
+      if (c && gameMode) {
+        // Mode filters use concept types where available (spec S/T); this is
+        // best-effort — the type/framework facts stored on each question
+        // still filter correctly without it.
+        try {
+          const concepts = await listConcepts(client, courseId);
+          setConceptTypesById(new Map(concepts.map((row) => [row.id, row.concept_type])));
+          setConceptNames(new Map(concepts.map((row) => [row.id, row.canonical_name])));
+        } catch {
+          // Leave the map empty; question-level facts still apply.
+        }
+      }
       if (c && mode === 'adaptive') {
         let found: StudySessionRow | null = null;
         try {
@@ -385,22 +436,34 @@ export function PracticeScreen({
   const startSession = async (requested: number) => {
     const client = getSupabase();
     if (!client) return;
-    const count = Math.min(requested, pool.length, MAX_SESSION_QUESTIONS);
+    const sourcePool = gameMode ? modeRows : pool;
+    const count = Math.min(requested, sourcePool.length, MAX_SESSION_QUESTIONS);
     try {
       const created = await createStudySession(client, courseId, count, mode);
-      // The session id seeds the deterministic order (M7 spec V/Z):
-      // reproducible for this session, different for the next one.
-      const orderedIds = buildSessionQuestionOrder(
-        pool.map((question) => ({
-          id: question.id,
-          conceptId: question.concept_id,
-          questionType: question.question_type,
-          difficulty: question.difficulty,
-        })),
-        count,
-        created.id
-      ).map((item) => item.id);
-      const byId = new Map(pool.map((question) => [question.id, question]));
+      // The session id seeds the deterministic order (M7 spec V/Z; M10 spec
+      // C): reproducible for this session, different for the next one. Game
+      // modes use a FIXED seeded order for the whole session — mid-session
+      // re-ranking stays an adaptive-mode behavior only.
+      let plan: ModePlan | null = null;
+      let orderedIds: string[];
+      if (gameMode) {
+        plan = gameMode.buildOrder(sourcePool.map(toModeQuestion), count, created.id);
+        orderedIds = plan.questionIds;
+        trackEvent({ name: 'mode_session_started', mode: gameMode.id });
+      } else {
+        orderedIds = buildSessionQuestionOrder(
+          sourcePool.map((question) => ({
+            id: question.id,
+            conceptId: question.concept_id,
+            questionType: question.question_type,
+            difficulty: question.difficulty,
+          })),
+          count,
+          created.id
+        ).map((item) => item.id);
+      }
+      const byId = new Map(sourcePool.map((question) => [question.id, question]));
+      setModePlan(plan);
       setSession(created);
       setAnswers([]);
       setRecords([]);
@@ -563,7 +626,7 @@ export function PracticeScreen({
     setPhase({ name: 'question', index: phase.index + 1, result: null });
   };
 
-  const modeTitle = mode === 'adaptive' ? 'Adaptive study' : 'Practice';
+  const modeTitle = gameMode ? gameMode.title : mode === 'adaptive' ? 'Adaptive study' : 'Practice';
 
   if (phase.name === 'loading') {
     return (
@@ -599,6 +662,14 @@ export function PracticeScreen({
               onPress={() => router.push(`/course/${courseId}`)}
             />
           </>
+        ) : gameMode && modeRows.length < gameMode.minQuestions ? (
+          <>
+            <Text style={styles.muted}>{gameMode.lockedMessage}</Text>
+            <SecondaryButton
+              label="Back to study modes"
+              onPress={() => router.push(`/course/${courseId}/modes`)}
+            />
+          </>
         ) : (
           <>
             {mode === 'adaptive' && resumable ? (
@@ -628,11 +699,17 @@ export function PracticeScreen({
               </View>
             ) : null}
             <Text style={styles.intro}>
-              {pool.length} question{pool.length === 1 ? '' : 's'} available from your course
-              materials. Choose a session length —{' '}
-              {mode === 'adaptive'
-                ? 'questions are picked for the topics that most need your attention right now.'
-                : 'questions are mixed across the topics your materials cover.'}
+              {gameMode
+                ? `${gameMode.tagline} ${modeRows.length} question${
+                    modeRows.length === 1 ? '' : 's'
+                  } available from your course materials.`
+                : `${pool.length} question${
+                    pool.length === 1 ? '' : 's'
+                  } available from your course materials. Choose a session length — ${
+                    mode === 'adaptive'
+                      ? 'questions are picked for the topics that most need your attention right now.'
+                      : 'questions are mixed across the topics your materials cover.'
+                  }`}
             </Text>
             {mode === 'adaptive' ? (
               <View style={styles.choiceRow}>
@@ -647,11 +724,11 @@ export function PracticeScreen({
             ) : (
               <View style={styles.choiceRow}>
                 {SESSION_SIZE_CHOICES.filter(
-                  (size, index) => size <= pool.length || index === 0
+                  (size, index) => size <= (gameMode ? modeRows : pool).length || index === 0
                 ).map((size) => (
                   <PrimaryButton
                     key={size}
-                    label={`${Math.min(size, pool.length)} questions`}
+                    label={`${Math.min(size, (gameMode ? modeRows : pool).length)} questions`}
                     onPress={() => startSession(size)}
                   />
                 ))}
@@ -743,9 +820,19 @@ export function PracticeScreen({
           onPress={() => setPhase({ name: 'setup' })}
         />
         <SecondaryButton
-          label={mode === 'adaptive' ? 'Back to Today' : 'Back to course'}
+          label={
+            mode === 'adaptive'
+              ? 'Back to Today'
+              : gameMode
+                ? 'Back to study modes'
+                : 'Back to course'
+          }
           onPress={() =>
-            mode === 'adaptive' ? router.push('/home') : router.push(`/course/${courseId}`)
+            mode === 'adaptive'
+              ? router.push('/home')
+              : gameMode
+                ? router.push(`/course/${courseId}/modes`)
+                : router.push(`/course/${courseId}`)
           }
         />
       </Screen>
@@ -760,9 +847,12 @@ export function PracticeScreen({
       : undefined;
   const remainingAfterThis = ordered.length - phase.index - (phase.result ? 1 : 0);
   const minutesLeft = estimateRemainingMinutes(remainingAfterThis);
+  // M10 spec I/J: the Boss Battle round this question belongs to.
+  const roundLabel = gameMode && modePlan ? segmentLabelAt(modePlan, phase.index) : null;
   return (
     <Screen title={`Question ${phase.index + 1} of ${ordered.length}`}>
       <ErrorBanner message={error} />
+      {roundLabel ? <Text style={styles.progressLine}>Round: {roundLabel}</Text> : null}
       {mode === 'adaptive' && minutesLeft > 0 ? (
         <Text style={styles.progressLine}>~{minutesLeft} min left</Text>
       ) : null}
@@ -786,11 +876,13 @@ export function PracticeScreen({
         key={question.id}
         question={question}
         result={phase.result}
-        concise={mode === 'adaptive'}
+        concise={mode === 'adaptive' || gameMode !== null}
         onExplainMore={() => trackEvent({ name: 'explain_more_used' })}
         onSubmit={(response, confidence) => onSubmitAnswer(question, response, confidence)}
       />
-      {mode === 'adaptive' && phase.result ? <SourceRefsPanel questionId={question.id} /> : null}
+      {(mode === 'adaptive' || gameMode) && phase.result ? (
+        <SourceRefsPanel questionId={question.id} />
+      ) : null}
       {phase.result ? <FlagQuestionPanel questionId={question.id} courseId={courseId} /> : null}
       {phase.result ? (
         <PrimaryButton

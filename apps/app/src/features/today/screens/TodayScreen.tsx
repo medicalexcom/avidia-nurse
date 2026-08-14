@@ -32,7 +32,13 @@ import {
   type CourseExamRow,
 } from '../../study/studyApi';
 import { SESSION_DURATION_MINUTES, dueReviewConceptIds } from '../plan';
-import { listRecentSessions, pickDefaultCourseId, type RecentSessionRow } from '../todayApi';
+import {
+  listOwnAttemptTimes,
+  listRecentSessions,
+  pickDefaultCourseId,
+  type RecentSessionRow,
+} from '../todayApi';
+import { computeStudyStreak, streakLine, type StudyStreak } from '../../modes/streak';
 
 /**
  * Today / Home screen — M9 (spec A/B/P/R/AC/AD/AE).
@@ -68,6 +74,9 @@ export function TodayScreen() {
   const [data, setData] = useState<CourseData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // M10 streak (ADR-0027): a pure derivation over the student's own attempt
+  // timestamps — displayed quietly, never stored, never punitive.
+  const [streak, setStreak] = useState<StudyStreak | null>(null);
 
   const load = useCallback(async () => {
     const client = getSupabase();
@@ -78,6 +87,13 @@ export function TodayScreen() {
     try {
       const owned = await listOwnCourses(client, user.id);
       setCourses(owned);
+      try {
+        const attemptTimes = await listOwnAttemptTimes(client);
+        setStreak(computeStudyStreak(attemptTimes, timeZone, new Date()));
+      } catch {
+        // Best-effort: the streak line simply stays hidden.
+        setStreak(null);
+      }
       const courseId =
         selectedCourseId && owned.some((c) => c.id === selectedCourseId)
           ? selectedCourseId
@@ -299,10 +315,18 @@ export function TodayScreen() {
         </>
       )}
 
+      {streak && streakLine(streak) ? (
+        <Text style={styles.streakLine}>{streakLine(streak)}</Text>
+      ) : null}
+
       <View style={styles.footer}>
         <SecondaryButton
           label="Open course"
           onPress={() => router.push(`/course/${selectedCourseId}`)}
+        />
+        <SecondaryButton
+          label="Study modes"
+          onPress={() => router.push(`/course/${selectedCourseId}/modes`)}
         />
         <SecondaryButton
           label="Free practice"
@@ -383,4 +407,5 @@ const styles = StyleSheet.create({
   priorityMeta: { color: colors.textMuted, fontSize: 13 },
   recentRow: { color: colors.textMuted, marginBottom: spacing(1) },
   footer: { marginTop: spacing(2), gap: spacing(2) },
+  streakLine: { color: colors.textMuted, fontSize: 13, marginTop: spacing(3) },
 });

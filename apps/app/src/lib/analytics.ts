@@ -14,6 +14,10 @@ export type AnalyticsEvent =
   | { name: 'daily_session_completed'; answeredCount: number; skippedCount: number }
   | { name: 'daily_session_abandoned'; answeredCount: number }
   | { name: 'quick_session_started'; requestedMinutes: number }
+  | {
+      name: 'mode_session_started';
+      mode: 'rapid_response' | 'find_the_danger' | 'who_first' | 'medication_lab' | 'boss_battle';
+    }
   | { name: 'source_viewed' }
   | { name: 'explain_more_used' };
 

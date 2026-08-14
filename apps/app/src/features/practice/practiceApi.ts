@@ -43,6 +43,19 @@ export interface PracticeOptionRow {
   option_text: string;
 }
 
+/**
+ * Session labels (M10 spec B/AL): the five mode ids join 'practice' and
+ * 'adaptive' as honest session_type values — same table, same lifecycle.
+ */
+export type StudySessionType =
+  | 'practice'
+  | 'adaptive'
+  | 'rapid_response'
+  | 'find_the_danger'
+  | 'who_first'
+  | 'medication_lab'
+  | 'boss_battle';
+
 export interface StudySessionRow {
   id: string;
   course_id: string;
@@ -141,7 +154,7 @@ export async function createStudySession(
   client: SupabaseClient,
   courseId: string,
   plannedQuestionCount: number,
-  sessionType: 'practice' | 'adaptive' = 'practice',
+  sessionType: StudySessionType = 'practice',
   requestedDurationMinutes: number | null = null
 ): Promise<StudySessionRow> {
   const { data, error } = await client

@@ -159,6 +159,10 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
             onPress={() => router.push(`/course/${courseId}/concepts`)}
           />
           <SecondaryButton
+            label="Practice"
+            onPress={() => router.push(`/course/${courseId}/practice`)}
+          />
+          <SecondaryButton
             label="Edit details"
             onPress={() => router.push(`/course/${courseId}/edit`)}
           />

@@ -76,6 +76,15 @@ export function createSupabaseKnowledgeClient(client: SupabaseClient): Knowledge
         p_payload: payload,
       });
       if (error) throw error;
+      // The concept evidence just changed, so the document's questions must be
+      // regenerated from the new knowledge (M7): reset the question lifecycle
+      // to 'pending'. applyExtraction only runs when the knowledge fingerprint
+      // actually changed, so an unchanged document never re-queues here.
+      const { error: resetError } = await client
+        .from('documents')
+        .update({ question_status: 'pending' })
+        .eq('id', documentId);
+      if (resetError) throw resetError;
       const counters = (data ?? {}) as {
         new_concepts?: number;
         links?: number;

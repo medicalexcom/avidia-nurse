@@ -13,6 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@avidia/assessment": "workspace:*",
     "@avidia/config": "workspace:*",
     "@avidia/domain": "workspace:*",
     "@avidia/rag": "workspace:*",

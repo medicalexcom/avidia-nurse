@@ -1,4 +1,8 @@
 import {
+  createQuestionGenerationProviderFromEnv,
+  QuestionGenerationProvider,
+} from '@avidia/assessment';
+import {
   ConceptExtractionProvider,
   createConceptExtractionProviderFromEnv,
 } from '@avidia/knowledge';
@@ -12,9 +16,16 @@ import {
   STALE_KNOWLEDGE_MS,
 } from './knowledge';
 import { drainQueue, processNextDocument, STALE_PROCESSING_MS, WorkerClient } from './processor';
+import {
+  drainQuestionQueue,
+  generateNextDocument,
+  QuestionsClient,
+  STALE_QUESTIONS_MS,
+} from './questions';
 import { parseSearchArgs, runSearch } from './searchCli';
 import { createSupabaseIndexerClient } from './supabaseIndexerClient';
 import { createSupabaseKnowledgeClient } from './supabaseKnowledgeClient';
+import { createSupabaseQuestionsClient } from './supabaseQuestionsClient';
 import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWorkerClient';
 
 /**
@@ -26,9 +37,10 @@ import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWor
  *                                               internal retrieval inspector
  *
  * Each cycle runs the M4 extraction stage (queued → ready), the M5 indexing
- * stage (ready + pending → indexed), and the M6 concept-extraction stage
- * (indexed + pending → knowledge ready), so an upload flows to
- * retrieval-and-knowledge-ready without operator action.
+ * stage (ready + pending → indexed), the M6 concept-extraction stage
+ * (indexed + pending → knowledge ready), and the M7 question-generation stage
+ * (knowledge ready + pending → questions ready), so an upload flows to
+ * practice-ready without operator action.
  *
  * Logging policy (spec O): document ids, statuses, and counts only — never
  * file content, storage keys, tokens, or credentials.
@@ -43,7 +55,8 @@ function log(message: string): void {
 async function sweepStale(
   client: WorkerClient,
   indexer: IndexerClient,
-  knowledge: KnowledgeClient
+  knowledge: KnowledgeClient,
+  questions: QuestionsClient
 ): Promise<void> {
   const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const recovered = await client.recoverStaleProcessing(staleBefore);
@@ -60,6 +73,11 @@ async function sweepStale(
   if (reExtract > 0) {
     log(`requeued ${reExtract} stale concept-extraction document(s)`);
   }
+  const staleQuestionsBefore = new Date(Date.now() - STALE_QUESTIONS_MS).toISOString();
+  const reGenerate = await questions.recoverStaleQuestions(staleQuestionsBefore);
+  if (reGenerate > 0) {
+    log(`requeued ${reGenerate} stale question-generation document(s)`);
+  }
 }
 
 async function runOnce(
@@ -67,9 +85,11 @@ async function runOnce(
   indexer: IndexerClient,
   embeddings: EmbeddingProvider,
   knowledge: KnowledgeClient,
-  concepts: ConceptExtractionProvider
+  concepts: ConceptExtractionProvider,
+  questions: QuestionsClient,
+  questionProvider: QuestionGenerationProvider
 ): Promise<void> {
-  await sweepStale(client, indexer, knowledge);
+  await sweepStale(client, indexer, knowledge, questions);
   const outcomes = await drainQueue(client);
   for (const outcome of outcomes) {
     if (outcome.status === 'ready') {
@@ -106,6 +126,21 @@ async function runOnce(
     }
   }
   log(`drained knowledge queue: ${extracted.length} document(s) extracted`);
+  const generated = await drainQuestionQueue(questions, questionProvider);
+  for (const outcome of generated) {
+    if (outcome.status === 'generated') {
+      log(
+        `document ${outcome.documentId} questions ready ` +
+          `(${outcome.inserted} inserted, ${outcome.duplicates} duplicates, ` +
+          `${outcome.rejected} rejected, ${outcome.flagged} flagged, ${outcome.links} links)`
+      );
+    } else if (outcome.status === 'skipped') {
+      log(`document ${outcome.documentId} questions unchanged (fingerprint match, no AI call)`);
+    } else if (outcome.status === 'failed') {
+      log(`document ${outcome.documentId} question generation failed`);
+    }
+  }
+  log(`drained question queue: ${generated.length} document(s) generated`);
 }
 
 async function runLoop(
@@ -113,7 +148,9 @@ async function runLoop(
   indexer: IndexerClient,
   embeddings: EmbeddingProvider,
   knowledge: KnowledgeClient,
-  concepts: ConceptExtractionProvider
+  concepts: ConceptExtractionProvider,
+  questions: QuestionsClient,
+  questionProvider: QuestionGenerationProvider
 ): Promise<never> {
   log(`polling every ${POLL_INTERVAL_MS / 1000}s`);
   let lastSweep = 0;
@@ -121,9 +158,9 @@ async function runLoop(
     try {
       if (
         Date.now() - lastSweep >
-        Math.min(STALE_PROCESSING_MS, STALE_INDEXING_MS, STALE_KNOWLEDGE_MS)
+        Math.min(STALE_PROCESSING_MS, STALE_INDEXING_MS, STALE_KNOWLEDGE_MS, STALE_QUESTIONS_MS)
       ) {
-        await sweepStale(client, indexer, knowledge);
+        await sweepStale(client, indexer, knowledge, questions);
         lastSweep = Date.now();
       }
       const outcome = await processNextDocument(client);
@@ -167,6 +204,27 @@ async function runLoop(
         log(`document ${knowledgeOutcome.documentId} concept extraction failed`);
         continue;
       }
+      const questionsOutcome = await generateNextDocument(questions, questionProvider);
+      if (questionsOutcome.status === 'generated') {
+        log(
+          `document ${questionsOutcome.documentId} questions ready ` +
+            `(${questionsOutcome.inserted} inserted, ${questionsOutcome.duplicates} duplicates, ` +
+            `${questionsOutcome.rejected} rejected, ${questionsOutcome.flagged} flagged, ` +
+            `${questionsOutcome.links} links)`
+        );
+        continue;
+      }
+      if (questionsOutcome.status === 'skipped') {
+        log(
+          `document ${questionsOutcome.documentId} questions unchanged ` +
+            '(fingerprint match, no AI call)'
+        );
+        continue;
+      }
+      if (questionsOutcome.status === 'failed') {
+        log(`document ${questionsOutcome.documentId} question generation failed`);
+        continue;
+      }
     } catch (error) {
       log(`worker error: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -187,11 +245,13 @@ async function main(): Promise<void> {
   const indexer = createSupabaseIndexerClient(supabase, embeddings);
   const knowledge = createSupabaseKnowledgeClient(supabase);
   const concepts = createConceptExtractionProviderFromEnv(process.env);
+  const questions = createSupabaseQuestionsClient(supabase);
+  const questionProvider = createQuestionGenerationProviderFromEnv(process.env);
   if (process.argv.includes('--once')) {
-    await runOnce(client, indexer, embeddings, knowledge, concepts);
+    await runOnce(client, indexer, embeddings, knowledge, concepts, questions, questionProvider);
     return;
   }
-  await runLoop(client, indexer, embeddings, knowledge, concepts);
+  await runLoop(client, indexer, embeddings, knowledge, concepts, questions, questionProvider);
 }
 
 main().catch((error) => {

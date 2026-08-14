@@ -12,6 +12,7 @@
     "search": "tsx src/index.ts --search"
   },
   "dependencies": {
+    "@avidia/assessment": "workspace:*",
     "@avidia/domain": "workspace:*",
     "@avidia/ingestion": "workspace:*",
     "@avidia/knowledge": "workspace:*",

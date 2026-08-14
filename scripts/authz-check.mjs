@@ -73,6 +73,25 @@
  *       concepts left with no supporting source (spec M/O).
  *   33. Deleting the course cascades to all four concept tables — no
  *       knowledge outlives the course it came from (spec A).
+ *
+ * M7 checks (spec AB/K/S/V/W/AH): questions + assessment engine.
+ *   34. Only the service role can call apply_question_generation; questions,
+ *       question_options and question_sources reject ALL direct client writes.
+ *   35. Owner reads own ACTIVE questions and options, but the answer-revealing
+ *       columns (rationale, expected_value/tolerance, is_correct,
+ *       correct_position, option rationale) are NOT selectable by any client.
+ *   36. Flagged questions are invisible to students (lifecycle spec S); user B
+ *       and anonymous clients read nothing even with exact guessed ids.
+ *   37. Sessions are owner-scoped: B cannot create a session under A's course,
+ *       read A's sessions, or update them; course_id is not reassignable.
+ *   38. question_attempts have NO direct write path — the only way to score is
+ *       submit_question_attempt, which verifies ownership, scores server-side
+ *       (choice + numeric tolerance), and reveals rationales only afterwards.
+ *   39. Answers are immutable (spec W): re-answering the same question in the
+ *       same session is a hard error; recorded attempts reject update/delete.
+ *   40. Feedback is stored but never auto-applied (spec AH); B cannot flag A's
+ *       question; deleting a document retires evidence-less course-grounded
+ *       questions; course deletion cascades to ALL M7 tables.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -816,6 +835,533 @@ try {
   });
   check('client cannot insert concept_relationships directly', Boolean(relIns.error));
 
+  // -------------------------------------------------------------------------
+  // M7 checks (spec AB/K/S/V/W/AH): questions + assessment engine.
+  // -------------------------------------------------------------------------
+
+  const sbaHash = 'a'.repeat(64);
+  const numericHash = 'b'.repeat(64);
+  const flaggedHash = 'c'.repeat(64);
+
+  // 34. Generation writes flow ONLY through the service-role RPC.
+  const questionSeed = await admin.rpc('apply_question_generation', {
+    p_document_id: docId,
+    p_payload: {
+      generation: {
+        provider: 'authz',
+        model: 'authz-test',
+        prompt_version: 'p1',
+        generation_version: 'v1',
+      },
+      questions: [
+        {
+          content_hash: sbaHash,
+          concept_key: 'furosemide',
+          question_type: 'single_best_answer',
+          stem: 'A client taking furosemide reports muscle weakness. Which finding should the nurse assess first?',
+          difficulty: 'moderate',
+          cognitive_level: 'application',
+          source_type: 'course_grounded',
+          priority_frameworks: ['safety'],
+          rationale:
+            'Furosemide causes potassium loss; muscle weakness suggests hypokalemia, so serum potassium is the priority.',
+          status: 'active',
+          safety_flags: [],
+          options: [
+            {
+              ordinal: 1,
+              text: 'Serum potassium level',
+              is_correct: true,
+              rationale: 'Hypokalemia is the classic furosemide risk.',
+            },
+            {
+              ordinal: 2,
+              text: 'Daily calorie intake',
+              is_correct: false,
+              rationale: 'Nutrition is not the priority here.',
+            },
+            {
+              ordinal: 3,
+              text: 'Pupillary response',
+              is_correct: false,
+              rationale: 'Not related to loop diuretic therapy.',
+            },
+          ],
+          chunk_ids: [chunkId],
+        },
+        {
+          content_hash: numericHash,
+          concept_key: 'furosemide',
+          question_type: 'numeric_calculation',
+          stem: 'The provider prescribes furosemide 40 mg PO. Tablets contain 20 mg. How many tablets should the nurse administer?',
+          difficulty: 'easy',
+          cognitive_level: 'application',
+          source_type: 'course_grounded',
+          priority_frameworks: [],
+          rationale: 'Desired 40 mg divided by 20 mg per tablet equals 2 tablets.',
+          expected_value: 2,
+          tolerance: 0.1,
+          answer_unit: 'tablets',
+          rounding_note: 'Whole tablets.',
+          status: 'active',
+          safety_flags: [],
+          options: [],
+          chunk_ids: [chunkId],
+        },
+        {
+          content_hash: flaggedHash,
+          concept_key: 'furosemide',
+          question_type: 'single_best_answer',
+          stem: 'A flagged fixture question about furosemide dosing safety that students must never see in practice.',
+          difficulty: 'hard',
+          cognitive_level: 'analysis',
+          source_type: 'course_grounded',
+          priority_frameworks: [],
+          rationale: 'Fixture rationale for the flagged safety-review question about dosing.',
+          status: 'flagged',
+          safety_flags: ['high_alert_medication'],
+          options: [
+            { ordinal: 1, text: 'Correct option', is_correct: true, rationale: null },
+            { ordinal: 2, text: 'Distractor', is_correct: false, rationale: null },
+          ],
+          chunk_ids: [chunkId],
+        },
+      ],
+    },
+  });
+  check(
+    'service role applies question generation via RPC',
+    !questionSeed.error &&
+      questionSeed.data?.inserted === 3 &&
+      questionSeed.data?.links === 3 &&
+      questionSeed.data?.retired === 0,
+    questionSeed.error?.message ?? JSON.stringify(questionSeed.data)
+  );
+  const clientGenRpc = await a.client.rpc('apply_question_generation', {
+    p_document_id: docId,
+    p_payload: { generation: {}, questions: [] },
+  });
+  check('authenticated client cannot call apply_question_generation', Boolean(clientGenRpc.error));
+  const anonGenRpc = await userClient().rpc('apply_question_generation', {
+    p_document_id: docId,
+    p_payload: { generation: {}, questions: [] },
+  });
+  check('anonymous client cannot call apply_question_generation', Boolean(anonGenRpc.error));
+
+  const adminQuestions = await admin
+    .from('questions')
+    .select('id, content_hash, status')
+    .eq('course_id', courseId);
+  const sbaQuestionId = adminQuestions.data?.find((q) => q.content_hash === sbaHash)?.id;
+  const numericQuestionId = adminQuestions.data?.find((q) => q.content_hash === numericHash)?.id;
+  const flaggedQuestionId = adminQuestions.data?.find((q) => q.content_hash === flaggedHash)?.id;
+
+  // Questions/options/sources reject ALL direct client writes.
+  const qIns = await a.client.from('questions').insert({
+    course_id: courseId,
+    question_type: 'single_best_answer',
+    stem: 'Forged question stem that is definitely long enough to pass checks.',
+    difficulty: 'easy',
+    cognitive_level: 'recall',
+    source_type: 'general_knowledge',
+    rationale: 'Forged rationale that is long enough to pass the check.',
+    content_hash: 'f'.repeat(64),
+  });
+  check('client cannot insert questions directly', Boolean(qIns.error));
+  const qUpd = await a.client
+    .from('questions')
+    .update({ stem: 'Tampered stem that is long enough for the check constraint.' })
+    .eq('id', sbaQuestionId)
+    .select('id');
+  check('client cannot update questions', Boolean(qUpd.error) || (qUpd.data ?? []).length === 0);
+  const qDel = await a.client.from('questions').delete().eq('id', sbaQuestionId).select('id');
+  check('client cannot delete questions', Boolean(qDel.error) || (qDel.data ?? []).length === 0);
+  const optIns = await a.client.from('question_options').insert({
+    question_id: sbaQuestionId,
+    course_id: courseId,
+    ordinal: 9,
+    option_text: 'Forged option',
+    is_correct: true,
+  });
+  check('client cannot insert question_options directly', Boolean(optIns.error));
+  const optUpd = await a.client
+    .from('question_options')
+    .update({ option_text: 'Tampered' })
+    .eq('question_id', sbaQuestionId)
+    .select('id');
+  check(
+    'client cannot update question_options',
+    Boolean(optUpd.error) || (optUpd.data ?? []).length === 0
+  );
+  const srcIns = await a.client.from('question_sources').insert({
+    question_id: sbaQuestionId,
+    chunk_id: chunkId,
+    course_id: courseId,
+    document_id: docId,
+    generation_version: 'v1',
+  });
+  check('client cannot insert question_sources directly', Boolean(srcIns.error));
+
+  // 35. Owner reads active questions/options — but never the answers (spec K).
+  const ownQuestions = await a.client
+    .from('questions')
+    .select('id, question_type, stem, difficulty, cognitive_level, source_type, status')
+    .eq('course_id', courseId)
+    .order('created_at');
+  check(
+    'owner reads own ACTIVE questions only (flagged is invisible)',
+    (ownQuestions.data ?? []).length === 2 &&
+      (ownQuestions.data ?? []).every((q) => q.status === 'active'),
+    ownQuestions.error?.message
+  );
+  const rationaleLeak = await a.client
+    .from('questions')
+    .select('rationale')
+    .eq('id', sbaQuestionId);
+  check('question rationale is not selectable by clients', Boolean(rationaleLeak.error));
+  const numericLeak = await a.client
+    .from('questions')
+    .select('expected_value, tolerance')
+    .eq('id', numericQuestionId);
+  check('numeric expected_value/tolerance are not selectable', Boolean(numericLeak.error));
+  const ownOptions = await a.client
+    .from('question_options')
+    .select('id, ordinal, option_text')
+    .eq('question_id', sbaQuestionId)
+    .order('ordinal');
+  check(
+    'owner reads own option text in deterministic order',
+    (ownOptions.data ?? []).length === 3 && ownOptions.data?.[0]?.ordinal === 1,
+    ownOptions.error?.message
+  );
+  const correctLeak = await a.client
+    .from('question_options')
+    .select('is_correct')
+    .eq('question_id', sbaQuestionId);
+  check('option is_correct is not selectable by clients', Boolean(correctLeak.error));
+  const positionLeak = await a.client
+    .from('question_options')
+    .select('correct_position, rationale')
+    .eq('question_id', sbaQuestionId);
+  check('option correct_position/rationale are not selectable', Boolean(positionLeak.error));
+  const ownProvenance = await a.client
+    .from('question_sources')
+    .select('question_id, chunk_id')
+    .eq('question_id', sbaQuestionId);
+  check(
+    'owner reads own question provenance links (spec Q)',
+    (ownProvenance.data ?? []).length === 1 && ownProvenance.data?.[0]?.chunk_id === chunkId,
+    ownProvenance.error?.message
+  );
+
+  // 36. Flagged + guessed-id reads return nothing for the owner, B and anon.
+  const flaggedRead = await a.client.from('questions').select('id').eq('id', flaggedQuestionId);
+  check('flagged questions are invisible to students', (flaggedRead.data ?? []).length === 0);
+  const flaggedOptions = await a.client
+    .from('question_options')
+    .select('id')
+    .eq('question_id', flaggedQuestionId);
+  check('options of flagged questions are invisible', (flaggedOptions.data ?? []).length === 0);
+  const bQuestion = await b.client.from('questions').select('id').eq('id', sbaQuestionId);
+  check(
+    "user cannot read another user's questions by guessed id",
+    (bQuestion.data ?? []).length === 0
+  );
+  const bOptions = await b.client
+    .from('question_options')
+    .select('id')
+    .eq('question_id', sbaQuestionId);
+  check("user cannot read another user's question options", (bOptions.data ?? []).length === 0);
+  const bSources = await b.client
+    .from('question_sources')
+    .select('question_id')
+    .eq('question_id', sbaQuestionId);
+  check("user cannot read another user's question sources", (bSources.data ?? []).length === 0);
+  const anonQuestion = await userClient().from('questions').select('id').eq('id', sbaQuestionId);
+  check('anonymous client reads no questions', (anonQuestion.data ?? []).length === 0);
+
+  // 37. Sessions are owner-scoped.
+  const sessionIns = await a.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'practice', planned_question_count: 2 })
+    .select('id, status')
+    .single();
+  check(
+    'owner creates a study session in own course',
+    !sessionIns.error && sessionIns.data?.status === 'in_progress',
+    sessionIns.error?.message
+  );
+  const sessionId = sessionIns.data?.id;
+  const bSessionIns = await b.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'practice', planned_question_count: 1 });
+  check("user cannot create a session under another user's course", Boolean(bSessionIns.error));
+  const bSessionRead = await b.client.from('study_sessions').select('id').eq('id', sessionId);
+  check(
+    "user cannot read another user's sessions by guessed id",
+    (bSessionRead.data ?? []).length === 0
+  );
+  const bSessionUpd = await b.client
+    .from('study_sessions')
+    .update({ status: 'completed' })
+    .eq('id', sessionId)
+    .select('id');
+  check(
+    "user cannot update another user's session",
+    Boolean(bSessionUpd.error) || (bSessionUpd.data ?? []).length === 0
+  );
+  const sessionReparent = await a.client
+    .from('study_sessions')
+    .update({ course_id: crypto.randomUUID() })
+    .eq('id', sessionId);
+  check('session course_id is not reassignable (column grant)', Boolean(sessionReparent.error));
+
+  // 38. Attempts exist ONLY via submit_question_attempt.
+  const attemptIns = await a.client.from('question_attempts').insert({
+    session_id: sessionId,
+    question_id: sbaQuestionId,
+    course_id: courseId,
+    response: { selected_option_ids: [] },
+    is_correct: true,
+  });
+  check('client cannot insert question_attempts directly', Boolean(attemptIns.error));
+
+  const adminOptions = await admin
+    .from('question_options')
+    .select('id, is_correct')
+    .eq('question_id', sbaQuestionId);
+  const correctOptionId = adminOptions.data?.find((o) => o.is_correct)?.id;
+  const wrongOptionId = adminOptions.data?.find((o) => !o.is_correct)?.id;
+
+  const scored = await a.client.rpc('submit_question_attempt', {
+    p_session_id: sessionId,
+    p_question_id: sbaQuestionId,
+    p_response: { selected_option_ids: [correctOptionId] },
+    p_response_time_ms: 4200,
+    p_confidence: 'pretty_sure',
+  });
+  check(
+    'owner scores an SBA attempt server-side and gets rationales back',
+    !scored.error &&
+      scored.data?.is_correct === true &&
+      typeof scored.data?.rationale === 'string' &&
+      (scored.data?.options ?? []).some((o) => o.is_correct === true),
+    scored.error?.message
+  );
+  const numericScored = await a.client.rpc('submit_question_attempt', {
+    p_session_id: sessionId,
+    p_question_id: numericQuestionId,
+    p_response: { value: 2.05 },
+    p_response_time_ms: null,
+    p_confidence: null,
+  });
+  check(
+    'numeric scoring honors the stored tolerance (spec P)',
+    !numericScored.error &&
+      numericScored.data?.is_correct === true &&
+      Number(numericScored.data?.expected_value) === 2,
+    numericScored.error?.message
+  );
+
+  // 39. The locked answer is immutable (spec W).
+  const reanswer = await a.client.rpc('submit_question_attempt', {
+    p_session_id: sessionId,
+    p_question_id: sbaQuestionId,
+    p_response: { selected_option_ids: [wrongOptionId] },
+  });
+  check('re-answering the same question in a session is refused', Boolean(reanswer.error));
+  const attemptRows = await a.client
+    .from('question_attempts')
+    .select('id, is_correct')
+    .eq('session_id', sessionId);
+  check(
+    'owner reads own attempts (two locked answers)',
+    (attemptRows.data ?? []).length === 2,
+    attemptRows.error?.message
+  );
+  const attemptUpd = await a.client
+    .from('question_attempts')
+    .update({ is_correct: false })
+    .eq('session_id', sessionId)
+    .select('id');
+  check(
+    'client cannot update recorded attempts',
+    Boolean(attemptUpd.error) || (attemptUpd.data ?? []).length === 0
+  );
+  const attemptDel = await a.client
+    .from('question_attempts')
+    .delete()
+    .eq('session_id', sessionId)
+    .select('id');
+  check(
+    'client cannot delete recorded attempts',
+    Boolean(attemptDel.error) || (attemptDel.data ?? []).length === 0
+  );
+  const bAttemptRpc = await b.client.rpc('submit_question_attempt', {
+    p_session_id: sessionId,
+    p_question_id: sbaQuestionId,
+    p_response: { selected_option_ids: [correctOptionId] },
+  });
+  check("user cannot score attempts against another user's session", Boolean(bAttemptRpc.error));
+  const anonAttemptRpc = await userClient().rpc('submit_question_attempt', {
+    p_session_id: sessionId,
+    p_question_id: sbaQuestionId,
+    p_response: { selected_option_ids: [correctOptionId] },
+  });
+  check('anonymous client cannot call submit_question_attempt', Boolean(anonAttemptRpc.error));
+  const bAttemptRead = await b.client
+    .from('question_attempts')
+    .select('id')
+    .eq('session_id', sessionId);
+  check("user cannot read another user's attempts", (bAttemptRead.data ?? []).length === 0);
+
+  const sessionClose = await a.client
+    .from('study_sessions')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .select('status')
+    .single();
+  check(
+    'owner completes own session',
+    !sessionClose.error && sessionClose.data?.status === 'completed',
+    sessionClose.error?.message
+  );
+
+  // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
+  const feedbackIns = await a.client
+    .from('question_feedback')
+    .insert({
+      question_id: sbaQuestionId,
+      course_id: courseId,
+      reason: 'answer_wrong',
+      comment: 'Authz fixture feedback.',
+    })
+    .select('id, reason')
+    .single();
+  check(
+    'owner flags own question with a reason',
+    !feedbackIns.error && feedbackIns.data?.reason === 'answer_wrong',
+    feedbackIns.error?.message
+  );
+  const bFeedback = await b.client.from('question_feedback').insert({
+    question_id: sbaQuestionId,
+    course_id: courseId,
+    reason: 'other',
+  });
+  check("user cannot flag another user's question", Boolean(bFeedback.error));
+  const afterFeedback = await admin
+    .from('questions')
+    .select('status')
+    .eq('id', sbaQuestionId)
+    .single();
+  check(
+    'feedback never auto-changes the question (still active)',
+    afterFeedback.data?.status === 'active'
+  );
+
+  // Deleting a document retires course-grounded questions that lost ALL of
+  // their evidence (spec H/Q) — verified via a disposable third document.
+  const doc3Ins = await admin
+    .from('documents')
+    .insert({
+      course_id: courseId,
+      uploaded_by: a.id,
+      filename: 'authz-test-3.txt',
+      original_filename: 'authz-test-3.txt',
+      mime_type: 'text/plain',
+      file_extension: 'txt',
+      file_size: 20,
+      document_type: 'notes',
+      content_hash: null,
+    })
+    .select()
+    .single();
+  const doc3Id = doc3Ins.data?.id;
+  await admin.rpc('replace_source_chunks', {
+    p_document_id: doc3Id,
+    p_chunks: [
+      {
+        ordinal: 0,
+        content: 'Authz chunk three: heparin requires aPTT monitoring.',
+        token_estimate: 10,
+        source_locator: { type: 'txt', sectionIndex: 0 },
+        section_start: 0,
+        section_end: 0,
+        embedding: unitVector,
+        embedding_provider: 'authz',
+        embedding_model: 'authz-test',
+        embedding_version: 'v1',
+      },
+    ],
+  });
+  const doc3Chunk = await admin
+    .from('source_chunks')
+    .select('id')
+    .eq('document_id', doc3Id)
+    .single();
+  const doc3Seed = await admin.rpc('apply_question_generation', {
+    p_document_id: doc3Id,
+    p_payload: {
+      generation: {
+        provider: 'authz',
+        model: 'authz-test',
+        prompt_version: 'p1',
+        generation_version: 'v1',
+      },
+      questions: [
+        {
+          content_hash: 'd'.repeat(64),
+          concept_key: null,
+          question_type: 'single_best_answer',
+          stem: 'A disposable fixture question whose only evidence lives in document three.',
+          difficulty: 'easy',
+          cognitive_level: 'recall',
+          source_type: 'course_grounded',
+          priority_frameworks: [],
+          rationale: 'Fixture rationale long enough to satisfy the length constraint.',
+          status: 'active',
+          safety_flags: [],
+          options: [
+            { ordinal: 1, text: 'Right', is_correct: true, rationale: null },
+            { ordinal: 2, text: 'Wrong', is_correct: false, rationale: null },
+          ],
+          chunk_ids: [doc3Chunk.data?.id],
+        },
+      ],
+    },
+  });
+  const doc3QuestionId = (
+    await admin
+      .from('questions')
+      .select('id')
+      .eq('course_id', courseId)
+      .eq('content_hash', 'd'.repeat(64))
+      .single()
+  ).data?.id;
+  check(
+    'third document seeded with an evidence-bound question',
+    !doc3Seed.error && Boolean(doc3QuestionId),
+    doc3Seed.error?.message
+  );
+  const doc3Del = await admin.from('documents').delete().eq('id', doc3Id).select('id');
+  const doc3QuestionAfter = await admin
+    .from('questions')
+    .select('status')
+    .eq('id', doc3QuestionId)
+    .single();
+  check(
+    'document delete retires the question that lost all its evidence',
+    (doc3Del.data ?? []).length === 1 && doc3QuestionAfter.data?.status === 'retired'
+  );
+  const survivorsAfterDoc3 = await admin
+    .from('questions')
+    .select('id, status')
+    .in('id', [sbaQuestionId, numericQuestionId]);
+  check(
+    'questions still backed by evidence survive the document delete',
+    (survivorsAfterDoc3.data ?? []).every((q) => q.status === 'active')
+  );
+
   // 32. Deleting a document removes its provenance links and prunes AI
   // concepts left without any supporting source (spec M/O). Uses a SECOND
   // document so the course-cascade check below keeps its fixtures.
@@ -935,8 +1481,25 @@ try {
     .from('concept_relationships')
     .select('id')
     .eq('course_id', courseId);
+  // 40 (cont.) The assessment layer must also be gone: questions, options,
+  // provenance, sessions, attempts and feedback all die with the course.
+  const orphanQuestions = await admin.from('questions').select('id').eq('course_id', courseId);
+  const orphanOptions = await admin.from('question_options').select('id').eq('course_id', courseId);
+  const orphanQuestionSources = await admin
+    .from('question_sources')
+    .select('question_id')
+    .eq('course_id', courseId);
+  const orphanSessions = await admin.from('study_sessions').select('id').eq('course_id', courseId);
+  const orphanAttempts = await admin
+    .from('question_attempts')
+    .select('id')
+    .eq('course_id', courseId);
+  const orphanFeedback = await admin
+    .from('question_feedback')
+    .select('id')
+    .eq('course_id', courseId);
   check(
-    'course delete cascades to modules, exams, exam_modules, documents, sections, chunks and concepts',
+    'course delete cascades to modules, exams, exam_modules, documents, sections, chunks, concepts and the assessment layer',
     (orphanModules.data ?? []).length === 0 &&
       (orphanExams.data ?? []).length === 0 &&
       (orphanLinks.data ?? []).length === 0 &&
@@ -946,7 +1509,13 @@ try {
       (orphanConcepts.data ?? []).length === 0 &&
       (orphanAliases.data ?? []).length === 0 &&
       (orphanConceptSources.data ?? []).length === 0 &&
-      (orphanRelationships.data ?? []).length === 0
+      (orphanRelationships.data ?? []).length === 0 &&
+      (orphanQuestions.data ?? []).length === 0 &&
+      (orphanOptions.data ?? []).length === 0 &&
+      (orphanQuestionSources.data ?? []).length === 0 &&
+      (orphanSessions.data ?? []).length === 0 &&
+      (orphanAttempts.data ?? []).length === 0 &&
+      (orphanFeedback.data ?? []).length === 0
   );
   await admin.storage
     .from('course-materials')

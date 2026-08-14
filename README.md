@@ -5,18 +5,22 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M6 — Nursing Concept and Knowledge Model.** Indexed materials now flow
-through AI concept extraction (OpenAI `gpt-4o-mini` behind a provider-independent gateway,
-strict JSON-schema output, versioned prompts, one controlled repair round) into a **course-scoped**
-knowledge model: typed nursing concepts (diseases, medications, labs, assessments, interventions…),
-first-class aliases (DKA → Diabetic Ketoacidosis), normalized concept↔chunk provenance with no
-copied text, and evidence-bound relationships ("Furosemide _may cause_ Hypokalemia" — every edge
-cites the exact chunk that says so). Dedup is deterministic-first (hyperkalemia can never merge
-with hypokalemia), a content/version fingerprint means unchanged material never re-bills the AI,
-and reprocessing or deletion can never leave stale knowledge behind. Students get a restrained
-concepts view showing exactly what was identified and _where_ ("Module 2 Electrolytes.pdf —
-slide 18"), with a transparent emphasis signal ("found in 4 places in your materials") — never an
-exam prediction. Quizzes, mastery, spaced repetition and generation remain later milestones.
+**Current milestone: M7 — Nursing Question and Assessment Engine.** The course knowledge model
+now feeds a source-grounded question pipeline: the worker generates NCLEX-style items (single
+best answer, select-all-that-apply, ordered response, numeric calculation) from the student's own
+concepts and chunks through a provider-independent gateway (OpenAI `gpt-4o-mini` strict JSON
+schema, plus a deterministic scripted mode), then validates every item BEFORE persistence —
+option-count and correctness invariants, answer-leakage and distractor-quality checks, stricter
+safety review for high-alert topics (insulin, anticoagulants, dosing, emergencies), content-hash
+dedup and a generation fingerprint so unchanged material never re-bills the AI. Questions carry
+teaching rationales (including per-distractor), question↔chunk provenance, cognitive levels up to
+prioritization, and an honest `course_grounded` vs `general_knowledge` label. Students practice in
+deterministic, non-adaptive sessions: answers are scored **server-side** by a SECURITY DEFINER
+RPC (dosage math is stored data, never AI arithmetic at answer time), locked immutably, and only
+then are rationales revealed — the correct answers are not even selectable columns for clients.
+Results are plain counts (no mastery or "weak area" labels), flagging a question never auto-changes
+it, and studying never requires a live LLM. Mastery, adaptivity and spaced repetition remain
+later milestones.
 
 ## Repository structure
 
@@ -29,12 +33,13 @@ avidia-nurse/
 │   │   └── src/
 │   │       ├── config/     # Validated environment configuration
 │   │       ├── lib/        # Supabase client (session persistence, token refresh)
-│   │       ├── features/   # auth, profile, courses, materials, concepts (with evidence)
+│   │       ├── features/   # auth, profile, courses, materials, concepts, practice
 │   │       └── ui/         # Theme, shared components, responsive navigation shell
 │   └── worker/             # Background worker (service role, Node/tsx): extracts queued
 │                           # documents into sections, chunks + embeds ready documents into
-│                           # source_chunks, then extracts nursing concepts into the course
-│                           # knowledge model; includes the internal retrieval CLI
+│                           # source_chunks, extracts nursing concepts into the course
+│                           # knowledge model, then generates validated practice questions;
+│                           # includes the internal retrieval CLI
 ├── packages/
 │   ├── config/             # Platform-agnostic shared configuration (no React, no LLM deps)
 │   ├── domain/             # Pure domain logic: validation, timezone-safe time math, exam
@@ -45,8 +50,12 @@ avidia-nurse/
 │   ├── knowledge/          # Concept extraction: normalization/dedup, strict schema
 │   │                       # validation, provider-agnostic AI gateway, refinement,
 │   │                       # fingerprint cost gate, batching, nursing eval fixtures
-│   └── rag/                # Semantic chunking, embedding providers (provider-agnostic),
-│                           # course-scoped retriever, grounding-context builder, eval set
+│   ├── rag/                # Semantic chunking, embedding providers (provider-agnostic),
+│   │                       # course-scoped retriever, grounding-context builder, eval set
+│   └── assessment/         # Question engine: strict item schema + validation pipeline,
+│                           # provider-agnostic generation gateway, deterministic scoring,
+│                           # content-hash dedup, fingerprint cost gate, session mixing,
+│                           # synthetic nursing eval fixtures
 ├── docs/
 │   ├── product/                 # The three governing specification documents
 │   ├── architecture-decisions/  # ADRs — why the architecture is the way it is

@@ -4,6 +4,7 @@ import {
   QUESTION_DIFFICULTIES,
   QUESTION_TYPES,
 } from '@avidia/domain';
+import { OPENAI_CHAT_MODELS, emitAiRouterEvent } from '@avidia/ai-router';
 
 import {
   GenerationChunk,
@@ -20,12 +21,16 @@ import {
  * no provider types past this seam, keys server-side only — screens never
  * call a provider).
  *
- * The production provider is OpenAI `gpt-4o-mini` (Playbook §16 routes
- * question generation to the low-cost model: high volume, structured,
- * validated downstream) called with plain `fetch` and constrained JSON
- * output. `ScriptedQuestionGenerationProvider` is the deterministic keyless
- * seam used by tests, the quality evaluation, and local development — it is
- * NOT a language model and must never be configured in production.
+ * The production provider is OpenAI, at the ECONOMY tier resolved from
+ * `@avidia/ai-router` (AI model routing v1, spec section 3/5: task ->
+ * QUESTION_GENERATION_ROUTINE -> ECONOMY — high volume, structured,
+ * validated downstream; "do not let screens/packages hard-code model
+ * names"), called with plain `fetch` and constrained JSON output. The
+ * literal model id lives in exactly one place, `@avidia/ai-router`'s
+ * `openai.ts` — this file only ever asks for `OPENAI_CHAT_MODELS.ECONOMY`.
+ * `ScriptedQuestionGenerationProvider` is the deterministic keyless seam
+ * used by tests, the quality evaluation, and local development — it is NOT
+ * a language model and must never be configured in production.
  */
 
 /** Bump when the generation pipeline changes in a way that requires re-runs. */
@@ -62,7 +67,14 @@ export class QuestionGenerationFailedError extends Error {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-export const OPENAI_QUESTION_MODEL = 'gpt-4o-mini';
+/**
+ * Resolved from the AI router's ECONOMY tier (QUESTION_GENERATION_ROUTINE's
+ * fixed tier — see packages/ai-router/src/tiers.ts), not hard-coded here.
+ * The QUESTION_MODEL env var (read in createQuestionGenerationProviderFromEnv
+ * below) still overrides this default, preserving the pre-router env
+ * contract (spec section 7).
+ */
+export const OPENAI_QUESTION_MODEL = OPENAI_CHAT_MODELS.ECONOMY;
 const MAX_ATTEMPTS = 3;
 
 /**
@@ -119,6 +131,49 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
     if (concepts.length === 0 || chunks.length === 0) {
       return { questions: [] };
     }
+    const startedAt = Date.now();
+    try {
+      const value = await this.generateViaChat(concepts, chunks);
+      emitAiRouterEvent({
+        task: 'QUESTION_GENERATION_ROUTINE',
+        complexity: 'MEDIUM',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: this.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: 0,
+        usedFallback: false,
+        success: true,
+      });
+      return value;
+    } catch (error) {
+      emitAiRouterEvent({
+        task: 'QUESTION_GENERATION_ROUTINE',
+        complexity: 'MEDIUM',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: this.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: 0,
+        usedFallback: false,
+        success: false,
+        failureReason: error instanceof QuestionGenerationFailedError ? String(error.status ?? 'other') : 'other',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Observability wraps this whole generate-then-optionally-repair round as
+   * one task-level event (spec section 8) — the per-HTTP-attempt retry loop
+   * inside `complete()` stays local to this provider for now (v1 scope; see
+   * docs/AI_MODEL_ROUTING.md for why full per-attempt fallback escalation via
+   * `executeAiTask` is deferred for this call site).
+   */
+  private async generateViaChat(
+    concepts: readonly GenerationConcept[],
+    chunks: readonly GenerationChunk[]
+  ): Promise<RawGeneration> {
     const conceptList = concepts
       .map((concept) => `- ${concept.name} (key: ${concept.key}, type: ${concept.type})`)
       .join('\n');

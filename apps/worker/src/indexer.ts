@@ -1,17 +1,19 @@
 import { ExtractedSection, MaterialExtension } from '@avidia/domain';
 import { chunkSections, EmbeddingProvider, RagChunk } from '@avidia/rag';
 
+import { errorMessage } from './messages';
+
 /**
  * Semantic indexing stage (M5, spec I/J/V).
  *
  * A SEPARATE lifecycle from M4 extraction, tracked in documents.index_status
- * (pending → indexing → indexed | failed) so extraction states stay exactly
+ * (pending -> indexing -> indexed | failed) so extraction states stay exactly
  * as M4 defined them. A document becomes indexable only once extraction has
  * made it 'ready'; re-extraction resets index_status to 'pending', so chunks
- * are always rebuilt from the latest sections — never stale.
+ * are always rebuilt from the latest sections - never stale.
  *
  * Same discipline as the processor: optimistic compare-and-set claims (two
- * indexers never embed the same document twice — spec V's duplicate-embedding
+ * indexers never embed the same document twice - spec V's duplicate-embedding
  * guard), atomic chunk replacement via the replace_source_chunks RPC
  * (idempotent re-indexing), student-safe failure states, stale sweep.
  */
@@ -58,8 +60,8 @@ export type IndexOutcome =
 export const STALE_INDEXING_MS = 15 * 60 * 1000;
 
 /**
- * Claim and fully index one ready document: sections → semantic chunks →
- * batched embeddings → atomic chunk replacement. Never throws for
+ * Claim and fully index one ready document: sections -> semantic chunks ->
+ * batched embeddings -> atomic chunk replacement. Never throws for
  * per-document problems; failures are recorded on the row so the queue keeps
  * draining. A document is 'indexed' only after its chunks are stored.
  */
@@ -85,7 +87,7 @@ export async function indexNextDocument(
     const tokenEstimate = chunks.reduce((sum, chunk) => sum + chunk.tokenEstimate, 0);
     return { status: 'indexed', documentId: doc.id, chunkCount, tokenEstimate };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     try {
       await client.markIndexFailed(doc.id, detail.slice(0, 2000));
     } catch {

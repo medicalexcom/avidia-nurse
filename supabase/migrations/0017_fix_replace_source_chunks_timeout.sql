@@ -1,0 +1,31 @@
+-- 0017 - Fix: replace_source_chunks(uuid, jsonb) hits the default
+-- statement_timeout on real-sized course materials (v1 pipeline diagnostic
+-- finding).
+--
+-- replace_source_chunks() (0005) deletes and re-inserts a document's entire
+-- chunk set in one statement, and source_chunks.embedding carries an HNSW
+-- index (source_chunks_embedding_idx). HNSW insert cost is materially higher
+-- per row than a plain index, and it is paid inside this same statement for
+-- every chunk being inserted. service_role has no statement_timeout
+-- override (unlike anon/authenticated, which are intentionally short-leashed
+-- at 3s/8s), so it falls back to whatever timeout applies to the calling
+-- session - which for a real textbook-sized upload is not enough headroom:
+--
+--   Confirmed live (2026-08-15): a 2134-section / ~526,000-character
+--   Pathophysiology course document's replace_source_chunks call was
+--   cancelled by Postgres ("canceling statement due to statement timeout",
+--   confirmed via Postgres logs) roughly 11 seconds in. The whole document
+--   indexing stage then failed, and - separately (see the companion worker
+--   code fix, not a migration) - the actual timeout reason was masked as
+--   "[object Object]" in index_detail because Supabase/PostgREST error
+--   objects are not `instanceof Error`.
+--
+-- This is not a pathological input: a single-textbook course document is
+-- normal usage, not an edge case, so the fix is to give this specific
+-- function more time rather than to shrink what real course materials are
+-- allowed to contain. Scoped to this one function only (ALTER FUNCTION ...
+-- SET, no body change, no other function or role is affected) so no other
+-- query's timeout behavior changes.
+
+alter function public.replace_source_chunks(uuid, jsonb)
+  set statement_timeout = '300s';

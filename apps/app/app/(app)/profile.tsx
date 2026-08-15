@@ -10,6 +10,7 @@ import {
   type Profile,
   type ProgramType,
 } from '../../src/features/profile/profileApi';
+import { AccountSection } from '../../src/features/billing/AccountSection';
 import { getSupabase } from '../../src/lib/supabase';
 import { ErrorBanner, Field, PrimaryButton, Screen } from '../../src/ui/components';
 import { colors, spacing } from '../../src/ui/theme';
@@ -126,6 +127,8 @@ export default function ProfileScreen() {
           <PrimaryButton label="Save changes" onPress={onSave} busy={saving} />
         </>
       )}
+
+      <AccountSection />
 
       <Pressable accessibilityRole="button" onPress={onSignOut} style={styles.signOut}>
         <Text style={styles.signOutLabel}>Sign out</Text>

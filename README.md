@@ -5,8 +5,31 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M13 — Intelligent Study Planner, Calendar, Exam Countdown, and
-Notifications.** Avidia now answers "what should I study between now and my exam?" with a
+**Current milestone: M14 — Subscription System, Entitlements, Production Hardening, and Release
+Infrastructure.** Avidia now has a complete monetization and hardening layer built around two
+principles: payments are never client-authoritative, and learning data never disappears when a
+subscription expires. A pure entitlements package (`@avidia/entitlements`) defines exactly two
+plans — a genuinely useful FREE (core loop with placeholder limits pending founder pricing) and
+PRO (advanced modes, study planner, unlimited usage) — checked everywhere by capability
+(`canUser`), never by plan string. The server is the only authority: a signature-verified Stripe
+webhook (Supabase Edge Function, idempotent by provider event id) is the sole writer of
+normalized subscription rows, `get_my_entitlements()` resolves the plan server-side, and
+FREE limits are enforced by database triggers gated behind a `subscriptions` feature flag that
+ships OFF — so M0–M13 behavior is unchanged until billing is deliberately launched by flipping
+one row. Web billing uses Stripe-hosted Checkout and Billing Portal only (no card data ever);
+native ships an honest not-configured store-billing stub behind a `StorePurchasesAdapter`
+boundary (no fabricated product IDs) with Restore Purchases in place, and Apple/Google/Stripe
+subscriptions are indistinguishable to the entitlement layer. Expiry downgrades what can be
+created, never data; account deletion refuses while a subscription would keep charging; students
+can export their data as JSON. Hardening: usage counters record always, rate limits guard the
+costly pipelines, a recoverable error boundary wraps the app, analytics events are payload-free,
+edge functions log without PII, CI gained dependency-audit and secret-scan gates, the authz
+suite grew billing sections 64–71 (forged premium, IDOR, webhook spoofing, deletion guard), and
+the environment strategy (per-environment Supabase projects, forward-only staging-first
+migrations, honest backup/retention docs) is documented rather than invented.
+
+Previous milestone — M13, Intelligent Study Planner, Calendar, Exam Countdown, and
+Notifications: Avidia answers "what should I study between now and my exam?" with a
 deterministic planner (`@avidia/planner`) that IS NOT ANOTHER MASTERY ENGINE — it consumes M8
 priorities/due reviews, M12 coverage and cognitive-level signals, M10 mode eligibility, and M11
 case availability to place work into the student's real availability (Light/Standard/Intensive

@@ -12,6 +12,9 @@ module.exports = tseslint.config(
       '**/.expo/**',
       '**/coverage/**',
       '**/web-build/**',
+      // Deno edge functions use URL imports and Deno globals; they are
+      // typechecked/deployed via the Supabase CLI, not the Node toolchain.
+      'supabase/functions/**',
     ],
   },
   js.configs.recommended,

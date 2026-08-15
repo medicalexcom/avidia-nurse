@@ -17,6 +17,7 @@
     "@avidia/assessment": "workspace:*",
     "@avidia/config": "workspace:*",
     "@avidia/domain": "workspace:*",
+    "@avidia/entitlements": "workspace:*",
     "@avidia/mastery": "workspace:*",
     "@avidia/planner": "workspace:*",
     "@avidia/rag": "workspace:*",

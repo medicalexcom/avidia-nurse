@@ -146,6 +146,27 @@
  *   58. (M12) get_simulation_analytics returns compact scored aggregates for
  *       the owner's completed sessions only — it leaks no hidden findings,
  *       user B is refused on A's course, and anonymous clients are refused.
+ *
+ * M14 checks (spec K/AP/AZ): billing is never client-authoritative.
+ *   64. feature_flags are readable but never writable by clients; the
+ *       'subscriptions' enforcement flag exists and ships disabled.
+ *   65. FORGED PREMIUM: a client cannot insert, update or delete
+ *       subscription rows — not its own, not anyone's. Only the service
+ *       role (webhook) writes subscription state.
+ *   66. IDOR: a user reads only their own subscription rows; user B sees
+ *       nothing of A's even with exact ids; anon sees nothing.
+ *   67. billing_events is pure webhook infrastructure: no client can read
+ *       or write it, and the (provider, provider_event_id) unique index
+ *       rejects duplicate deliveries (idempotency, spec G).
+ *   68. usage_counters: owner reads own usage, B reads nothing, and no
+ *       client can write counters or call record_usage/check_rate_limit.
+ *   69. get_my_entitlements is caller-scoped and server-authoritative:
+ *       FREE with no subscriptions, PRO after the service role records an
+ *       active subscription; anonymous callers are refused.
+ *   70. export_my_data returns only the caller's own data (spec AK).
+ *   71. delete_my_account refuses while a subscription would keep charging,
+ *       then, once cancel_at_period_end is set, removes the auth user and
+ *       every owned row (spec AL).
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -2432,6 +2453,191 @@ try {
     .catch(() => {});
   const profileStill = await admin.from('profiles').select('id').eq('id', a.id).maybeSingle();
   check('profile survives course deletion', Boolean(profileStill.data));
+
+  // -------------------------------------------------------------------------
+  // M14: billing is never client-authoritative (spec K/AP/AZ)
+  // -------------------------------------------------------------------------
+
+  // 64. feature_flags: readable, never writable, ships with enforcement off.
+  const flagRead = await a.client
+    .from('feature_flags')
+    .select('key, enabled')
+    .eq('key', 'subscriptions')
+    .maybeSingle();
+  check(
+    "feature_flags readable and 'subscriptions' ships disabled",
+    !flagRead.error && flagRead.data?.enabled === false,
+    flagRead.error?.message ?? `enabled=${flagRead.data?.enabled}`
+  );
+  const flagUpd = await a.client
+    .from('feature_flags')
+    .update({ enabled: true })
+    .eq('key', 'subscriptions')
+    .select();
+  check(
+    'client cannot flip feature flags',
+    Boolean(flagUpd.error) || (flagUpd.data ?? []).length === 0
+  );
+
+  // 65. FORGED PREMIUM: no client writes to subscriptions, period.
+  const forged = await a.client.from('subscriptions').insert({
+    user_id: a.id,
+    provider: 'stripe',
+    provider_customer_id: 'cus_forged',
+    provider_subscription_id: 'sub_forged',
+    status: 'active',
+  });
+  check('client cannot INSERT a subscription for itself (forged premium)', Boolean(forged.error));
+  const forgedForB = await a.client.from('subscriptions').insert({
+    user_id: b.id,
+    provider: 'stripe',
+    provider_customer_id: 'cus_forged_b',
+    provider_subscription_id: 'sub_forged_b',
+    status: 'active',
+  });
+  check('client cannot INSERT a subscription for another user', Boolean(forgedForB.error));
+
+  // Service role (the webhook) records A's real subscription.
+  const svcSub = await admin
+    .from('subscriptions')
+    .insert({
+      user_id: a.id,
+      provider: 'stripe',
+      provider_customer_id: 'cus_authz_a',
+      provider_subscription_id: 'sub_authz_a',
+      product_id: 'prod_pro',
+      status: 'active',
+      current_period_end: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      cancel_at_period_end: false,
+    })
+    .select('id')
+    .single();
+  check('service role (webhook) records subscription state', !svcSub.error, svcSub.error?.message);
+  const subId = svcSub.data?.id;
+
+  const subUpd = await a.client
+    .from('subscriptions')
+    .update({ status: 'active', current_period_end: '2099-01-01T00:00:00Z' })
+    .eq('id', subId)
+    .select();
+  check(
+    'client cannot UPDATE its own subscription (no self-extension)',
+    Boolean(subUpd.error) || (subUpd.data ?? []).length === 0
+  );
+  const subDel = await a.client.from('subscriptions').delete().eq('id', subId).select();
+  check(
+    'client cannot DELETE subscription rows',
+    Boolean(subDel.error) || (subDel.data ?? []).length === 0
+  );
+
+  // 66. IDOR: own rows only.
+  const ownSub = await a.client.from('subscriptions').select('id, status').eq('id', subId);
+  check('owner reads own subscription row', (ownSub.data ?? []).length === 1);
+  const bSub = await b.client.from('subscriptions').select('id').eq('id', subId);
+  check(
+    "user B cannot read A's subscription even with the exact id",
+    (bSub.data ?? []).length === 0
+  );
+  const anonSub = await userClient().from('subscriptions').select('id');
+  check(
+    'anonymous clients read no subscriptions',
+    Boolean(anonSub.error) || (anonSub.data ?? []).length === 0
+  );
+
+  // 67. billing_events: webhook infrastructure only + duplicate rejection.
+  const evtRead = await a.client.from('billing_events').select('id');
+  check(
+    'clients cannot read billing_events',
+    Boolean(evtRead.error) || (evtRead.data ?? []).length === 0
+  );
+  const evtWrite = await a.client
+    .from('billing_events')
+    .insert({ provider: 'stripe', provider_event_id: 'evt_forged', event_type: 'x' });
+  check('clients cannot write billing_events', Boolean(evtWrite.error));
+  const evtFirst = await admin
+    .from('billing_events')
+    .insert({ provider: 'stripe', provider_event_id: 'evt_authz_1', event_type: 'test' });
+  const evtDup = await admin
+    .from('billing_events')
+    .insert({ provider: 'stripe', provider_event_id: 'evt_authz_1', event_type: 'test' });
+  check(
+    'duplicate provider event IDs are rejected by the unique index (idempotency)',
+    !evtFirst.error && Boolean(evtDup.error),
+    evtFirst.error?.message
+  );
+
+  // 68. usage_counters: read-own only, all writes via definer paths.
+  const usageWrite = await a.client
+    .from('usage_counters')
+    .insert({ user_id: a.id, resource: 'simulations', period_key: '2026-08', used: 0 });
+  check('clients cannot write usage counters directly', Boolean(usageWrite.error));
+  const recordRpc = await a.client.rpc('record_usage', {
+    p_user_id: a.id,
+    p_resource: 'simulations',
+    p_amount: 999,
+  });
+  check('clients cannot call record_usage', Boolean(recordRpc.error));
+  const rateRpc = await a.client.rpc('check_rate_limit', {
+    p_user_id: a.id,
+    p_bucket: 'x',
+    p_max_hits: 1,
+    p_window: '1 hour',
+  });
+  check('clients cannot call check_rate_limit', Boolean(rateRpc.error));
+  await admin.rpc('record_usage', { p_user_id: a.id, p_resource: 'simulations', p_amount: 2 });
+  const ownUsage = await a.client.from('usage_counters').select('resource, used');
+  check(
+    'owner reads own usage counters',
+    (ownUsage.data ?? []).some((r) => r.resource === 'simulations' && r.used >= 2)
+  );
+  const bUsage = await b.client.from('usage_counters').select('used').eq('user_id', a.id);
+  check("user B reads none of A's usage", (bUsage.data ?? []).length === 0);
+
+  // 69. get_my_entitlements: caller-scoped, server-authoritative.
+  const bEnt = await b.client.rpc('get_my_entitlements');
+  check(
+    'entitlements resolve FREE with no subscriptions',
+    !bEnt.error && bEnt.data?.plan === 'free',
+    bEnt.error?.message ?? `plan=${bEnt.data?.plan}`
+  );
+  const aEnt = await a.client.rpc('get_my_entitlements');
+  check(
+    'entitlements resolve PRO from the webhook-written subscription',
+    !aEnt.error && aEnt.data?.plan === 'pro',
+    aEnt.error?.message ?? `plan=${aEnt.data?.plan}`
+  );
+  const anonEnt = await userClient().rpc('get_my_entitlements');
+  check('anonymous callers get no entitlements', Boolean(anonEnt.error));
+
+  // 70. export_my_data: caller-scoped bundle.
+  const aExport = await a.client.rpc('export_my_data');
+  check(
+    'export_my_data returns the caller-scoped bundle',
+    !aExport.error && typeof aExport.data === 'object' && aExport.data !== null,
+    aExport.error?.message
+  );
+
+  // 71. delete_my_account: billing guard, then full removal.
+  const guardedDelete = await a.client.rpc('delete_my_account');
+  check(
+    'account deletion is refused while the subscription would keep charging',
+    Boolean(guardedDelete.error) &&
+      String(guardedDelete.error?.message ?? '').includes('ACTIVE_SUBSCRIPTION')
+  );
+  await admin.from('subscriptions').update({ cancel_at_period_end: true }).eq('id', subId);
+  const allowedDelete = await a.client.rpc('delete_my_account');
+  check(
+    'account deletion succeeds once the subscription is set to cancel',
+    !allowedDelete.error,
+    allowedDelete.error?.message
+  );
+  const aGone = await admin.from('profiles').select('id').eq('id', a.id).maybeSingle();
+  const aSubsGone = await admin.from('subscriptions').select('id').eq('user_id', a.id);
+  check(
+    'deletion removes the profile and every owned billing row',
+    !aGone.data && (aSubsGone.data ?? []).length === 0
+  );
+  await admin.from('billing_events').delete().eq('provider_event_id', 'evt_authz_1');
 } catch (err) {
   console.error(`ERROR: ${err.message}`);
   failures += 1;

@@ -109,3 +109,80 @@ exact guessed ids; direct client writes to all four concept tables are
 denied; deleting a document removes its evidence and prunes orphaned AI
 concepts; course deletion cascades to the entire knowledge model), then
 deletes the users and any test objects.
+
+## M14: billing, entitlements and edge functions
+
+Migration `0015_subscriptions_and_entitlements.sql` adds the billing layer:
+`feature_flags` (with the `subscriptions` enforcement switch, shipped
+**disabled**), `subscriptions` (normalized, read-own-only; ONLY the service
+role writes it), `billing_events` (webhook idempotency ledger, no client
+access), `usage_counters` + `rate_limit_hits` (server-side cost controls),
+the entitlement functions (`current_plan`, `get_my_entitlements`), the
+account functions (`export_my_data`, `delete_my_account`), and the
+flag-gated FREE-plan limit triggers. Until the `subscriptions` flag is
+flipped to `true`, behavior is identical to M13 — usage is recorded, but
+nothing is enforced or paywalled.
+
+### Edge functions (`functions/`)
+
+| Function                        | Auth                                             | Purpose                                                                                                                            |
+| ------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `stripe-webhook`                | Stripe signature (deploy with `--no-verify-jwt`) | The ONLY writer of subscription state. Verifies `Stripe-Signature`, dedupes by provider event id, upserts the normalized snapshot. |
+| `create-checkout-session`       | Supabase JWT                                     | Returns a Stripe-hosted checkout URL for PRO (`client_reference_id` = user id).                                                    |
+| `create-billing-portal-session` | Supabase JWT                                     | Returns a Stripe-hosted portal URL (cancel / payment method / invoices).                                                           |
+| `health`                        | none                                             | Liveness + database reachability, no internals exposed.                                                                            |
+
+Deploy and configure (per environment):
+
+```bash
+supabase functions deploy health create-checkout-session create-billing-portal-session
+supabase functions deploy stripe-webhook --no-verify-jwt
+supabase secrets set STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_... \
+  STRIPE_PRICE_ID_PRO=price_... BILLING_RETURN_URL=https://<app>/profile
+```
+
+Then point a Stripe webhook endpoint (test mode first) at
+`https://<ref>.functions.supabase.co/stripe-webhook` subscribed to:
+`checkout.session.completed`, `customer.subscription.created`,
+`customer.subscription.updated`, `customer.subscription.deleted`,
+`invoice.payment_failed`.
+
+### Environment strategy (spec AA/AB/AC — ADR-0039)
+
+One Supabase project **per environment**, never shared:
+
+- **development** — free-tier project per developer (or one shared dev
+  project), Stripe **test** mode, `subscriptions` flag freely toggled.
+- **staging/preview** — its own project, Stripe **test** mode, used for the
+  manual billing validation pass before any production change.
+- **production** — created deliberately by the founder when launch nears
+  (NOT created automatically by tooling), Stripe **live** mode, backups
+  verified (below) before real users arrive.
+
+Migrations are applied **in filename order, forward-only** in every
+environment (SQL editor or `supabase db push`); staging always receives a
+migration before production does. Seed data separation: `seed/` content
+(simulation case library, migration `0012`) is product data and ships
+everywhere; throwaway dev/test data must never live in `migrations/`.
+
+### Backups & retention (spec AJ/AM — documented, not invented)
+
+Supabase Pro-tier projects take daily automated backups (restore via
+Dashboard → Database → Backups); the free tier does NOT include
+point-in-time recovery, which is acceptable for development only — the
+production project must be on a plan with backups before launch, and a
+restore must be rehearsed once on staging. Data retention policy: learning
+data is kept until the user deletes it (or their account —
+`delete_my_account()` removes everything owned, including storage objects);
+billing rows keep only provider identifiers/status (never card data);
+`billing_events` keeps event ids for idempotency and audit. Any
+retention-window promises beyond this require a legal/founder decision and
+are NOT invented here (spec AM).
+
+M14 authz additions to `pnpm run test:authz` (sections 64–71): clients
+cannot write subscriptions/billing_events/usage_counters or flip feature
+flags (forged premium denied), subscription reads are strictly own-row,
+duplicate webhook event ids are rejected, `get_my_entitlements` resolves
+FREE/PRO server-side, `export_my_data` is caller-scoped, and
+`delete_my_account` refuses while a subscription would keep charging, then
+removes the auth user, owned rows and storage objects.

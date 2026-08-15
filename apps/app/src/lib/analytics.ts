@@ -31,7 +31,17 @@ export type AnalyticsEvent =
   // M12 (spec AM): the ONLY analytics-page event, and it is payload-free by
   // construction — no metric, mastery number, readiness state or course
   // content can ride along to any transport.
-  | { name: 'analytics_viewed' };
+  | { name: 'analytics_viewed' }
+  // M14 billing funnel (spec AG): payload-free by construction — no prices,
+  // no provider identifiers, no personal data can ride along. The funnel is
+  // observable (viewed → started → outcome) without knowing anything about
+  // the student.
+  | { name: 'paywall_viewed' }
+  | { name: 'checkout_started' }
+  | { name: 'billing_portal_opened' }
+  | { name: 'restore_purchases_attempted' }
+  | { name: 'data_export_requested' }
+  | { name: 'account_deletion_requested' };
 
 const MAX_BUFFERED_EVENTS = 200;
 const buffer: AnalyticsEvent[] = [];

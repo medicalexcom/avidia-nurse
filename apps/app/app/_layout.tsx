@@ -3,6 +3,7 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppErrorBoundary } from '../src/components/AppErrorBoundary';
 import { AuthProvider, useAuth } from '../src/features/auth/AuthProvider';
 import { decideRoute, routeGroupFromSegments } from '../src/features/auth/guards';
 import { LoadingScreen } from '../src/ui/components';
@@ -34,10 +35,14 @@ function AuthGate() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <StatusBar style="dark" />
-        <AuthGate />
-      </AuthProvider>
+      {/* M14 spec AV: a render crash anywhere below shows a recoverable
+          screen instead of a dead app. */}
+      <AppErrorBoundary>
+        <AuthProvider>
+          <StatusBar style="dark" />
+          <AuthGate />
+        </AuthProvider>
+      </AppErrorBoundary>
     </SafeAreaProvider>
   );
 }

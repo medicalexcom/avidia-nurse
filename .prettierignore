@@ -5,3 +5,4 @@ coverage/
 web-build/
 package-lock.json
 assets/
+supabase/functions/

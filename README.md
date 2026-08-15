@@ -5,8 +5,23 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M14 — Subscription System, Entitlements, Production Hardening, and Release
-Infrastructure.** Avidia now has a complete monetization and hardening layer built around two
+**Current milestone: M15 — Final Integration, Beta Hardening, Release Readiness, and v1
+Acceptance. This is the final milestone of the v1 build sequence.** M15 added no features: it
+audited the entire repository (no TODOs, no dev bypasses, no dead code, the store-billing stub is
+the only — documented — placeholder), re-verified security (service-role isolation, no secrets in
+tree or history, RLS on every user-data table, strict deep-link allowlist), closed the
+store-build gaps (iOS buildNumber / Android versionCode / notifications plugin / eas.json build
+profiles), hardened mobile UX (keyboard-safe auth screens, labeled 48pt nav targets), and
+produced the v1 documentation set: BETA_READINESS, RELEASE_CHECKLIST, KNOWN_LIMITATIONS,
+ENVIRONMENTS, SECURITY_OVERVIEW, and OPERATIONS_RUNBOOK under `docs/`, plus a 26-area acceptance
+matrix and an honest 39-step journey record in `docs/worklogs/M15.md`. Verdict: **ready for
+closed beta with non-blocking limitations, conditional on founder infrastructure** — the code is
+complete and validated (867 tests, CI green, zero open P0/P1), and what remains is provisioning
+(Supabase projects, AI keys, Apple/Stripe accounts), seed content, and one live end-to-end pass,
+all scripted in `docs/RELEASE_CHECKLIST.md`. Anything beyond this belongs to a post-v1 roadmap.
+
+Previous milestone — M14, Subscription System, Entitlements, Production Hardening, and Release
+Infrastructure: Avidia has a complete monetization and hardening layer built around two
 principles: payments are never client-authoritative, and learning data never disappears when a
 subscription expires. A pure entitlements package (`@avidia/entitlements`) defines exactly two
 plans — a genuinely useful FREE (core loop with placeholder limits pending founder pricing) and

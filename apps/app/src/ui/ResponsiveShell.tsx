@@ -27,6 +27,7 @@ export function ResponsiveShell({ children }: { children: ReactNode }) {
       <Pressable
         key={dest.href}
         accessibilityRole="button"
+        accessibilityLabel={dest.label}
         accessibilityState={{ selected: active }}
         onPress={() => router.replace(dest.href)}
         style={[
@@ -105,7 +106,14 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: spacing(1.5),
   },
-  tabItem: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: spacing(1) },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: spacing(1),
+    minHeight: 48,
+  },
   tabItemActive: {},
   tabLabel: { fontSize: 11, color: colors.textMuted },
   glyph: { fontSize: 18, color: colors.textMuted },

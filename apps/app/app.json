@@ -9,10 +9,15 @@
     "scheme": "avidianurse",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.medicalex.avidianurse"
+      "bundleIdentifier": "com.medicalex.avidianurse",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.medicalex.avidianurse",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -26,6 +31,14 @@
       "bundler": "metro",
       "output": "single"
     },
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default"
+        }
+      ]
+    ]
   }
 }

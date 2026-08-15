@@ -63,6 +63,9 @@ module.exports = tseslint.config(
         crypto: 'readonly',
         // Blob is a Node 18+ global (used to upload test objects in authz-check).
         Blob: 'readonly',
+        // URL is used by ai-boundary-check.mjs to resolve the repo root from
+        // import.meta.url.
+        URL: 'readonly',
       },
     },
   },

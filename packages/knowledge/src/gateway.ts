@@ -1,4 +1,5 @@
 import { CONCEPT_RELATIONSHIP_TYPES, CONCEPT_TYPES } from '@avidia/domain';
+import { OPENAI_CHAT_MODELS, emitAiRouterEvent } from '@avidia/ai-router';
 
 import { ExtractionChunk, RawExtraction, extractionJsonSchema, validateExtraction } from './schema';
 
@@ -8,12 +9,16 @@ import { ExtractionChunk, RawExtraction, extractionJsonSchema, validateExtractio
  * no provider types past this seam, keys server-side only — screens never
  * call a provider).
  *
- * The production provider is OpenAI `gpt-4o-mini` (Blueprint §15 routes
- * concept extraction to a small/medium model: high volume, structured,
- * validated downstream) called with plain `fetch` and constrained JSON
- * output. `ScriptedConceptExtractionProvider` is the deterministic keyless
- * seam used by tests, the quality evaluation, and local development — it is
- * NOT a language model and must never be configured in production.
+ * The production provider is OpenAI, at the ECONOMY tier resolved from
+ * `@avidia/ai-router` (AI model routing v1, spec section 3/5: task ->
+ * CONCEPT_EXTRACTION -> ECONOMY — high volume, structured, validated
+ * downstream; "do not let screens/packages hard-code model names"), called
+ * with plain `fetch` and constrained JSON output. The literal model id lives
+ * in exactly one place, `@avidia/ai-router`'s `openai.ts` — this file only
+ * ever asks for `OPENAI_CHAT_MODELS.ECONOMY`. `ScriptedConceptExtractionProvider`
+ * is the deterministic keyless seam used by tests, the quality evaluation,
+ * and local development — it is NOT a language model and must never be
+ * configured in production.
  */
 
 /** Bump when the extraction pipeline changes in a way that requires re-runs. */
@@ -47,7 +52,14 @@ export class ConceptExtractionFailedError extends Error {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-export const OPENAI_CONCEPT_MODEL = 'gpt-4o-mini';
+/**
+ * Resolved from the AI router's ECONOMY tier (CONCEPT_EXTRACTION's fixed
+ * tier — see packages/ai-router/src/tiers.ts), not hard-coded here. The
+ * CONCEPT_MODEL env var (read in createConceptExtractionProviderFromEnv
+ * below) still overrides this default, preserving the pre-router env
+ * contract (spec section 7).
+ */
+export const OPENAI_CONCEPT_MODEL = OPENAI_CHAT_MODELS.ECONOMY;
 const MAX_ATTEMPTS = 3;
 
 /**
@@ -92,6 +104,46 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
     if (chunks.length === 0) {
       return { concepts: [], relationships: [] };
     }
+    const startedAt = Date.now();
+    try {
+      const value = await this.extractViaChat(chunks);
+      emitAiRouterEvent({
+        task: 'CONCEPT_EXTRACTION',
+        complexity: 'MEDIUM',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: this.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: 0,
+        usedFallback: false,
+        success: true,
+      });
+      return value;
+    } catch (error) {
+      emitAiRouterEvent({
+        task: 'CONCEPT_EXTRACTION',
+        complexity: 'MEDIUM',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: this.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: 0,
+        usedFallback: false,
+        success: false,
+        failureReason: error instanceof ConceptExtractionFailedError ? String(error.status ?? 'other') : 'other',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Observability wraps this whole extract-then-optionally-repair round as
+   * one task-level event (spec section 8) — the per-HTTP-attempt retry loop
+   * inside `complete()` stays local to this provider for now (v1 scope; see
+   * docs/AI_MODEL_ROUTING.md for why full per-attempt fallback escalation via
+   * `executeAiTask` is deferred for this call site).
+   */
+  private async extractViaChat(chunks: readonly ExtractionChunk[]): Promise<RawExtraction> {
     const userPrompt = chunks
       .map((chunk, index) => `[${index}] (${chunk.locator})\n${chunk.content}`)
       .join('\n\n');

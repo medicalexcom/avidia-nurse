@@ -42,5 +42,35 @@ export function internalDetailForError(error: unknown): string {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`.slice(0, 2000);
   }
-  return String(error).slice(0, 2000);
+  return errorMessage(error).slice(0, 2000);
+}
+
+/**
+ * Best-effort message extraction for internal-only diagnostic fields
+ * (index_detail, knowledge_detail, question_detail). `error instanceof
+ * Error` alone is not enough here: supabase-js throws plain
+ * `{message, code, details, hint}` objects (PostgrestError) for every
+ * database-level failure - a failed RPC, a statement timeout, a constraint
+ * violation - and those are NOT `instanceof Error`, so falling straight
+ * through to `String(error)` silently collapses them to the useless literal
+ * "[object Object]", exactly the kind of failure this repo's own comments
+ * ("internal diagnostics only") intend these columns to actually explain.
+ * Confirmed live (2026-08-15): a real replace_source_chunks statement
+ * timeout was masked this way in index_detail; the real cause was only
+ * recoverable via Postgres logs. This checks for a string `.message`
+ * property before falling back to `String(error)`.
+ */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message;
+  }
+  return String(error);
 }

@@ -9,22 +9,24 @@ import {
   validateGenerationBatch,
 } from '@avidia/assessment';
 
+import { errorMessage } from './messages';
+
 /**
  * Question-generation stage (M7 spec G/I/Y/AD/AE).
  *
  * The FOURTH independent document lifecycle, tracked in
- * documents.question_status (pending → generating → ready | failed),
+ * documents.question_status (pending -> generating -> ready | failed),
  * alongside M4 processing_status, M5 index_status and M6 knowledge_status. A
  * document becomes generable only once knowledge_status='ready': questions
  * are grounded in the same source_chunks retrieval uses and target the M6
  * concepts, so provenance lines up across milestones. Re-extraction resets
- * question_status to 'pending' — questions always derive from the current
+ * question_status to 'pending' - questions always derive from the current
  * concept evidence, never stale knowledge.
  *
  * Failure isolation (spec AE): a generation failure marks ONLY
  * question_status='failed'; reading, retrieval and the knowledge map stay
  * fully usable, and the stage is retryable. Studying never requires a live
- * LLM — sessions draw from already-persisted questions.
+ * LLM - sessions draw from already-persisted questions.
  *
  * Cost control (spec Y/AD): a SHA-256 fingerprint over provider/model/prompt
  * version/generation version plus the selected concept keys and the exact
@@ -35,7 +37,7 @@ import {
 /** Minimal projection of a documents row the questions stage needs. */
 export interface GenerableDocument {
   id: string;
-  /** documents.question_fingerprint from the previous successful run. */
+  /** documents.questionFingerprint from the previous successful run. */
   questionFingerprint: string | null;
 }
 
@@ -65,7 +67,7 @@ export interface QuestionsClient {
   /**
    * Persist one validated batch atomically via the apply_question_generation
    * RPC (insert questions + options, refresh provenance links, dedup by
-   * content hash, retire evidence-less course-grounded questions — one
+   * content hash, retire evidence-less course-grounded questions - one
    * transaction). Returns the RPC counters.
    */
   applyGeneration(
@@ -105,10 +107,10 @@ export const STALE_QUESTIONS_MS = 15 * 60 * 1000;
 export const MAX_GENERATION_CONCEPTS = 8;
 
 /**
- * Claim and fully process one document: inputs → fingerprint gate → provider
- * generation → clinical validation pipeline → atomic RPC persistence. Never
- * throws for per-document problems; failures are recorded on the row
- * (question lifecycle only) so the queue keeps draining.
+ * Claim and fully process one document: inputs -> fingerprint gate ->
+ * provider generation -> clinical validation pipeline -> atomic RPC
+ * persistence. Never throws for per-document problems; failures are recorded
+ * on the row (question lifecycle only) so the queue keeps draining.
  */
 export async function generateNextDocument(
   client: QuestionsClient,
@@ -154,7 +156,7 @@ export async function generateNextDocument(
       links: result.links,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     try {
       await client.markQuestionsFailed(doc.id, detail.slice(0, 2000));
     } catch {

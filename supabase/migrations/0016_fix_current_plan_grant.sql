@@ -1,0 +1,32 @@
+-- 0016 — Security fix: current_plan(uuid) must not be client-callable with
+-- an arbitrary user id (v1 reconciliation finding).
+--
+-- 0015 added:
+--   create or replace function public.current_plan(p_user_id uuid) ...
+--   grant execute on function public.current_plan(uuid) to authenticated;
+--
+-- current_plan() trusts p_user_id as given — it never checks it against
+-- auth.uid(). Granting EXECUTE to `authenticated` therefore let ANY signed-in
+-- user learn an ARBITRARY other user's subscription plan ('pro' | 'free') by
+-- calling `select public.current_plan('<other-users-uuid>')` (e.g. via
+-- PostgREST RPC), given only that user's id. This is a cross-user
+-- entitlement/billing-status disclosure — exactly the "user-id parameter
+-- allowing impersonation" shape called out for review, though the exposure
+-- here is a read (plan status), not a write (no path lets a client alter
+-- another user's — or even their own — plan or subscription state).
+--
+-- No application code calls current_plan() directly (confirmed by repo
+-- search): the only callers are all internal, SECURITY DEFINER SQL —
+-- get_my_entitlements() (0015, the sole client-facing entitlement read; it
+-- takes NO parameter and uses auth.uid() internally — the correct pattern),
+-- enforce_course_limit(), enforce_document_limits(), and
+-- enforce_simulation_limits() (0015 triggers). SECURITY DEFINER functions
+-- execute as their owner, so revoking `authenticated`'s grant on
+-- current_plan(uuid) does not affect any of these internal call sites —
+-- only direct client RPC calls are blocked.
+--
+-- Fix-forward, not a rewrite of 0015: migrations are immutable once
+-- committed, so this revokes the over-grant in a new migration rather than
+-- editing 0015's history.
+
+revoke execute on function public.current_plan(uuid) from authenticated;

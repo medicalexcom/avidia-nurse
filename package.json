@@ -2,7 +2,7 @@
   "name": "avidia-nurse",
   "version": "0.1.0",
   "private": true,
-  "description": "Avidia Nurse \u2014 adaptive nursing-education platform (monorepo)",
+  "description": "Avidia Nurse — adaptive nursing-education platform (monorepo)",
   "packageManager": "pnpm@10.17.0",
   "engines": {
     "node": ">=20"
@@ -31,7 +31,8 @@
     "web": "pnpm --filter @avidia/app web",
     "start": "pnpm --filter @avidia/app start",
     "build:web": "turbo run build:web",
-    "test:authz": "node scripts/authz-check.mjs"
+    "test:authz": "node scripts/authz-check.mjs",
+    "test:ai-boundary": "node scripts/ai-boundary-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",

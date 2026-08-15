@@ -1,0 +1,44 @@
+name: Verify AI Model Routing IDs
+
+# Manual check for the AI model router (packages/ai-router): confirms every
+# OpenAI model id hard-coded in packages/ai-router/src/openai.ts is actually
+# available on the OpenAI account behind the OPENAI_API_KEY repository
+# secret (spec section 3: "verify actual availability before committing
+# model IDs"). Uses the SAME secret already configured for the worker
+# workflow (.github/workflows/worker.yml) — no new secret is required.
+#
+# The key is only ever read server-side by apps/worker/scripts/verify-models.ts
+# to call OpenAI's own GET /v1/models endpoint; it is never logged or
+# returned. Run this whenever OpenAI ships a new model generation, or after
+# changing packages/ai-router/src/openai.ts.
+#
+# Run manually: Actions tab -> "Verify AI Model Routing IDs" -> Run workflow.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  verify-models:
+    name: Check router model ids against the configured OpenAI account
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify model ids
+        run: pnpm --filter @avidia/worker verify-models
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

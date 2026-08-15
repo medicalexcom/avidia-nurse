@@ -59,11 +59,12 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
+      # No `cache: pnpm` here: this job runs `pnpm audit` against the lockfile
+      # without installing, so there is no pnpm store to cache.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       # M14 spec AQ: fail on HIGH/CRITICAL advisories in the dependency tree.
       # Lower-severity advisories show up in the same command locally

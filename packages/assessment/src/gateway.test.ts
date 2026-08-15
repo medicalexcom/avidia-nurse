@@ -1,9 +1,12 @@
+import { AiRouterEvent, setAiRouterEventSink } from '@avidia/ai-router';
+
 import {
   EVAL_GENERATION_CHUNKS,
   EVAL_GENERATION_CONCEPTS,
   EVAL_GOOD_QUESTIONS,
 } from './evalFixtures';
 import {
+  OPENAI_QUESTION_MODEL,
   OpenAIQuestionGenerationProvider,
   QuestionGenerationFailedError,
   ScriptedQuestionGenerationProvider,
@@ -129,6 +132,64 @@ describe('OpenAI question generation provider (M7 spec I/J/AE)', () => {
       questions: [],
     });
     expect(calls).toBe(0);
+  });
+
+  describe('AI router observability (spec section 8)', () => {
+    const events: AiRouterEvent[] = [];
+    let previousSink: ReturnType<typeof setAiRouterEventSink>;
+
+    beforeEach(() => {
+      events.length = 0;
+      previousSink = setAiRouterEventSink((event) => events.push(event));
+    });
+
+    afterEach(() => {
+      setAiRouterEventSink(previousSink);
+    });
+
+    it('emits one privacy-safe QUESTION_GENERATION_ROUTINE event per call, carrying no concept/chunk/stem content', async () => {
+      const provider = new OpenAIQuestionGenerationProvider(
+        'key',
+        OPENAI_QUESTION_MODEL,
+        async () => okResponse({ questions: EVAL_GOOD_QUESTIONS }),
+        noSleep
+      );
+      await provider.generate(EVAL_GENERATION_CONCEPTS, EVAL_GENERATION_CHUNKS);
+
+      expect(events).toHaveLength(1);
+      const [event] = events;
+      expect(event).toMatchObject({
+        task: 'QUESTION_GENERATION_ROUTINE',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: OPENAI_QUESTION_MODEL,
+        success: true,
+      });
+      expect(typeof event!.latencyMs).toBe('number');
+      const stems = EVAL_GOOD_QUESTIONS.map((q) => q.stem).filter(Boolean);
+      for (const stem of stems) {
+        expect(JSON.stringify(event)).not.toContain(stem);
+      }
+    });
+
+    it('emits a failure event when generation fails', async () => {
+      const provider = new OpenAIQuestionGenerationProvider(
+        'key',
+        OPENAI_QUESTION_MODEL,
+        async () => new Response('bad request', { status: 400 }),
+        noSleep
+      );
+      await expect(
+        provider.generate(EVAL_GENERATION_CONCEPTS, EVAL_GENERATION_CHUNKS)
+      ).rejects.toThrow(QuestionGenerationFailedError);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        task: 'QUESTION_GENERATION_ROUTINE',
+        success: false,
+        failureReason: '400',
+      });
+    });
   });
 });
 

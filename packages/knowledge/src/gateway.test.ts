@@ -1,3 +1,5 @@
+import { AiRouterEvent, setAiRouterEventSink } from '@avidia/ai-router';
+
 import { EVAL_EXTRACTION_CHUNKS } from './evalFixtures';
 import {
   CONCEPT_EXTRACTION_SYSTEM_PROMPT,
@@ -218,6 +220,56 @@ describe('OpenAIConceptExtractionProvider', () => {
       noSleep
     );
     await expect(provider.extract(chunks)).rejects.toThrow(ConceptExtractionFailedError);
+  });
+
+  describe('AI router observability (spec section 8)', () => {
+    const events: AiRouterEvent[] = [];
+    let previousSink: ReturnType<typeof setAiRouterEventSink>;
+
+    beforeEach(() => {
+      events.length = 0;
+      previousSink = setAiRouterEventSink((event) => events.push(event));
+    });
+
+    afterEach(() => {
+      setAiRouterEventSink(previousSink);
+    });
+
+    it('emits one privacy-safe CONCEPT_EXTRACTION event per call, carrying no chunk/prompt content', async () => {
+      const provider = new OpenAIConceptExtractionProvider(
+        'key',
+        OPENAI_CONCEPT_MODEL,
+        () => Promise.resolve(chatResponse(validExtraction)),
+        noSleep
+      );
+      await provider.extract(chunks);
+
+      expect(events).toHaveLength(1);
+      const [event] = events;
+      expect(event).toMatchObject({
+        task: 'CONCEPT_EXTRACTION',
+        tier: 'ECONOMY',
+        provider: 'openai',
+        model: OPENAI_CONCEPT_MODEL,
+        success: true,
+      });
+      expect(typeof event!.latencyMs).toBe('number');
+      // No field on the event can carry the chunk text or the model's output.
+      expect(JSON.stringify(event)).not.toMatch(/Hyperkalemia/);
+    });
+
+    it('emits a failure event (without leaking the raw provider error into the event itself) when extraction fails', async () => {
+      const provider = new OpenAIConceptExtractionProvider(
+        'key',
+        OPENAI_CONCEPT_MODEL,
+        () => Promise.resolve(jsonResponse({}, 401)),
+        noSleep
+      );
+      await expect(provider.extract(chunks)).rejects.toThrow(ConceptExtractionFailedError);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ task: 'CONCEPT_EXTRACTION', success: false, failureReason: '401' });
+    });
   });
 });
 

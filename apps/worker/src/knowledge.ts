@@ -9,16 +9,18 @@ import {
   toRpcPayload,
 } from '@avidia/knowledge';
 
+import { errorMessage } from './messages';
+
 /**
  * Concept-extraction stage (M6 spec N/O/S/T).
  *
  * The THIRD independent document lifecycle, tracked in
- * documents.knowledge_status (pending → extracting → ready | failed),
+ * documents.knowledge_status (pending -> extracting -> ready | failed),
  * alongside M4 processing_status and M5 index_status. A document becomes
  * extractable only once it is BOTH 'ready' (extracted) and 'indexed'
  * (chunked): concepts are grounded in the same source_chunks retrieval uses,
  * so provenance ids line up across milestones. Re-indexing resets
- * knowledge_status to 'pending' — concept evidence is always derived from the
+ * knowledge_status to 'pending' - concept evidence is always derived from the
  * current chunks, never stale ones (spec O).
  *
  * Failure isolation (spec T): a concept-extraction failure marks ONLY
@@ -28,7 +30,7 @@ import {
  * Cost control (spec S): a SHA-256 fingerprint over provider/model/prompt
  * version/extraction version plus the exact chunk ids and contents is
  * compared with the stored fingerprint before any AI call. Unchanged
- * material never pays for extraction again — the claim is simply marked
+ * material never pays for extraction again - the claim is simply marked
  * ready.
  */
 
@@ -54,7 +56,7 @@ export interface KnowledgeClient {
    * Atomically withdraw-and-replace the document's concept evidence via the
    * apply_concept_extraction RPC (delete this document's links + chunk-backed
    * relationships, upsert concepts/aliases, insert links, prune orphans,
-   * recompute emphasis — one transaction). Returns the RPC counters.
+   * recompute emphasis - one transaction). Returns the RPC counters.
    */
   applyExtraction(
     documentId: string,
@@ -84,8 +86,8 @@ export type KnowledgeOutcome =
 export const STALE_KNOWLEDGE_MS = 15 * 60 * 1000;
 
 /**
- * Claim and fully process one document: chunks → fingerprint gate → batched
- * provider extraction → deterministic refinement → atomic RPC persistence.
+ * Claim and fully process one document: chunks -> fingerprint gate -> batched
+ * provider extraction -> deterministic refinement -> atomic RPC persistence.
  * Never throws for per-document problems; failures are recorded on the row
  * (knowledge lifecycle only) so the queue keeps draining.
  */
@@ -141,7 +143,7 @@ export async function extractNextDocument(
       relationships: result.relationships,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     try {
       await client.markKnowledgeFailed(doc.id, detail.slice(0, 2000));
     } catch {

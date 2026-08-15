@@ -9,9 +9,11 @@
     "test": "jest",
     "start": "tsx src/index.ts",
     "start:once": "tsx src/index.ts --once",
-    "search": "tsx src/index.ts --search"
+    "search": "tsx src/index.ts --search",
+    "verify-models": "tsx scripts/verify-models.ts"
   },
   "dependencies": {
+    "@avidia/ai-router": "workspace:*",
     "@avidia/assessment": "workspace:*",
     "@avidia/domain": "workspace:*",
     "@avidia/ingestion": "workspace:*",

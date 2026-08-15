@@ -1,0 +1,58 @@
+name: Document Processing Worker
+
+# Runs the existing apps/worker background pipeline (M4 extraction -> M5
+# indexing/embeddings -> M6 concept extraction -> M7 question generation) on
+# a schedule, using `start:once` (drain both queues once, then exit) rather
+# than the long-running poll loop, since GitHub Actions runners are
+# ephemeral. This is intentionally the same worker source used for local
+# development (supabase/README.md) — no logic is duplicated or reimplemented
+# here, only its execution trigger changes from "someone's laptop" to CI.
+#
+# Requires three REPOSITORY SECRETS (Settings -> Secrets and variables ->
+# Actions -> Secrets), never Variables: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# OPENAI_API_KEY. Until all three are set, this workflow will fail fast at the
+# "Run worker" step with the same guard error the local worker raises
+# (see packages/rag/src/embedding.ts, packages/knowledge/src/gateway.ts,
+# packages/assessment/src/gateway.ts) rather than silently doing nothing.
+#
+# Cadence: every 15 minutes. Adjust if beta-scale usage needs tighter
+# latency or if GitHub Actions minutes become a cost concern; the worker's
+# own stale-job recovery (processor.ts / indexer.ts / knowledge.ts /
+# questions.ts) means a missed or overlapping run is always safe to retry.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: document-processing-worker
+  cancel-in-progress: false
+
+jobs:
+  run-worker:
+    name: Drain document processing queues
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run worker (drain once)
+        run: pnpm --filter @avidia/worker start:once
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

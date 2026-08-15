@@ -1874,6 +1874,235 @@ try {
   });
   check('anonymous client cannot call get_simulation_analytics', Boolean(simAnalyticsAnon.error));
 
+  // 59 (M13). planner_settings: plain per-user preference rows (spec B/AB).
+  // Owners read/write their own row; nobody else sees it; constraint checks
+  // reject nonsense presets and reminder hours.
+  const settingsIns = await a.client
+    .from('planner_settings')
+    .insert({ user_id: a.id, preset: 'custom', minutes_by_weekday: [0, 30, 30, 30, 30, 30, 0] })
+    .select('preset, study_reminders, exam_reminders')
+    .single();
+  check(
+    'owner saves planner settings; reminders default to opt-out (spec AB)',
+    !settingsIns.error &&
+      settingsIns.data?.preset === 'custom' &&
+      settingsIns.data?.study_reminders === false &&
+      settingsIns.data?.exam_reminders === false,
+    settingsIns.error?.message
+  );
+  const badPreset = await a.client
+    .from('planner_settings')
+    .update({ preset: 'cramming' })
+    .eq('user_id', a.id);
+  check('unknown availability presets are rejected', Boolean(badPreset.error));
+  const badHour = await a.client
+    .from('planner_settings')
+    .update({ reminder_hour: 99 })
+    .eq('user_id', a.id);
+  check('out-of-range reminder hours are rejected', Boolean(badHour.error));
+  const bSettings = await b.client.from('planner_settings').select('preset').eq('user_id', a.id);
+  check("user B reads nothing from A's planner settings", (bSettings.data ?? []).length === 0);
+  const bSettingsSpoof = await b.client
+    .from('planner_settings')
+    .insert({ user_id: a.id, preset: 'light' });
+  check('user B cannot create settings for another user', Boolean(bSettingsSpoof.error));
+
+  // 60 (M13). save_study_plan: the ONLY write path for plans (spec AL/AO).
+  // Every activity row must point at a course the caller owns.
+  const planPayload = (extra = {}) => ({
+    horizonStart: '2026-08-14',
+    horizonEnd: '2026-08-27',
+    timeZone: 'America/New_York',
+    rulesVersion: 1,
+    totalPlannedMinutes: 30,
+    totalNeedMinutes: 30,
+    capacityMinutes: 30,
+    overCapacity: false,
+    activities: [
+      {
+        courseId,
+        date: '2026-08-14',
+        position: 0,
+        type: 'targeted_practice',
+        conceptId: null,
+        modeId: null,
+        minutes: 15,
+        reasons: [{ code: 'low_mastery' }],
+      },
+      {
+        courseId,
+        date: '2026-08-14',
+        position: 1,
+        type: 'due_review',
+        conceptId: null,
+        modeId: null,
+        minutes: 15,
+        reasons: [{ code: 'review_due' }],
+      },
+    ],
+    ...extra,
+  });
+  const savedPlan = await a.client.rpc('save_study_plan', { p_plan: planPayload() });
+  const savedPlanId = savedPlan.data;
+  const planRow = await a.client
+    .from('study_plans')
+    .select('id, revision, status, over_capacity')
+    .eq('id', savedPlanId)
+    .single();
+  const activityRows = await a.client
+    .from('planned_activities')
+    .select('id, activity_type, status, position')
+    .eq('plan_id', savedPlanId)
+    .order('position');
+  check(
+    'owner saves a study plan through the RPC and reads it back (spec AL)',
+    !savedPlan.error &&
+      planRow.data?.revision === 1 &&
+      planRow.data?.status === 'active' &&
+      (activityRows.data ?? []).length === 2 &&
+      activityRows.data?.[0]?.status === 'planned',
+    savedPlan.error?.message ?? planRow.error?.message
+  );
+  const bPlanTheft = await b.client.rpc('save_study_plan', { p_plan: planPayload() });
+  check(
+    "user B cannot save a plan targeting A's course (spec AO)",
+    Boolean(bPlanTheft.error),
+    bPlanTheft.error ? '' : 'save succeeded!'
+  );
+  const anonPlan = await userClient().rpc('save_study_plan', { p_plan: planPayload() });
+  check('anonymous client cannot call save_study_plan', Boolean(anonPlan.error));
+  const directPlanIns = await a.client.from('study_plans').insert({
+    user_id: a.id,
+    revision: 99,
+    horizon_start: '2026-08-14',
+    horizon_end: '2026-08-27',
+    time_zone: 'UTC',
+    rules_version: 1,
+    total_planned_minutes: 0,
+    total_need_minutes: 0,
+    capacity_minutes: 0,
+  });
+  check('client cannot insert study_plans directly (RPC-only)', Boolean(directPlanIns.error));
+  const directActivityIns = await a.client.from('planned_activities').insert({
+    plan_id: savedPlanId,
+    course_id: courseId,
+    activity_date: '2026-08-14',
+    position: 9,
+    activity_type: 'boss_battle',
+    minutes: 10,
+  });
+  check(
+    'client cannot insert planned_activities directly (RPC-only)',
+    Boolean(directActivityIns.error)
+  );
+  const bStudyPlanRead = await b.client.from('study_plans').select('id').eq('id', savedPlanId);
+  const bActivityRead = await b.client
+    .from('planned_activities')
+    .select('id')
+    .eq('plan_id', savedPlanId);
+  check(
+    "user B reads nothing from A's plan or activities",
+    (bStudyPlanRead.data ?? []).length === 0 && (bActivityRead.data ?? []).length === 0
+  );
+
+  // 61 (M13). Completion is evidence-based (spec U/AN): a COMPLETED session of
+  // the caller's own, in the same course, bound at most once — ever.
+  const plannerSessionIns = await a.client
+    .from('study_sessions')
+    .insert({ course_id: courseId, session_type: 'adaptive', planned_question_count: 3 })
+    .select('id')
+    .single();
+  const plannerSessionId = plannerSessionIns.data?.id;
+  const activityOne = activityRows.data?.[0]?.id;
+  const activityTwo = activityRows.data?.[1]?.id;
+  const completeTooEarly = await a.client.rpc('complete_planned_activity', {
+    p_activity_id: activityOne,
+    p_session_id: plannerSessionId,
+  });
+  check(
+    'an in-progress session is NOT completion evidence (spec U)',
+    Boolean(completeTooEarly.error)
+  );
+  await a.client
+    .from('study_sessions')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', plannerSessionId);
+  const startOk = await a.client.rpc('start_planned_activity', { p_activity_id: activityOne });
+  const completeOk = await a.client.rpc('complete_planned_activity', {
+    p_activity_id: activityOne,
+    p_session_id: plannerSessionId,
+  });
+  const completeAgain = await a.client.rpc('complete_planned_activity', {
+    p_activity_id: activityOne,
+    p_session_id: plannerSessionId,
+  });
+  const afterComplete = await a.client
+    .from('planned_activities')
+    .select('status, session_id')
+    .eq('id', activityOne)
+    .single();
+  check(
+    'owner starts and completes an activity with a real session; re-completion is a no-op (spec AN)',
+    !startOk.error &&
+      !completeOk.error &&
+      !completeAgain.error &&
+      afterComplete.data?.status === 'completed' &&
+      afterComplete.data?.session_id === plannerSessionId,
+    completeOk.error?.message
+  );
+  const doubleSpend = await a.client.rpc('complete_planned_activity', {
+    p_activity_id: activityTwo,
+    p_session_id: plannerSessionId,
+  });
+  check(
+    'one session can never satisfy a SECOND activity (spec AN)',
+    Boolean(doubleSpend.error),
+    doubleSpend.error ? '' : 'double binding succeeded!'
+  );
+  const bComplete = await b.client.rpc('complete_planned_activity', {
+    p_activity_id: activityTwo,
+    p_session_id: plannerSessionId,
+  });
+  check("user B cannot complete A's planned activity", Boolean(bComplete.error));
+  const bSkip = await b.client.rpc('skip_planned_activity', { p_activity_id: activityTwo });
+  check("user B cannot skip A's planned activity", Boolean(bSkip.error));
+
+  // 62 (M13). Regeneration supersedes, never mutates (spec AM/Z): saving a new
+  // plan flips the old revision + its PENDING rows to superseded while the
+  // completed row keeps its history.
+  const secondPlan = await a.client.rpc('save_study_plan', { p_plan: planPayload() });
+  const oldPlanAfter = await a.client
+    .from('study_plans')
+    .select('status')
+    .eq('id', savedPlanId)
+    .single();
+  const newPlanRow = await a.client
+    .from('study_plans')
+    .select('revision, status')
+    .eq('id', secondPlan.data)
+    .single();
+  const oldActivitiesAfter = await a.client
+    .from('planned_activities')
+    .select('id, status')
+    .eq('plan_id', savedPlanId)
+    .order('position');
+  check(
+    'saving a new plan supersedes the old revision but preserves completed history (spec AM/Z)',
+    !secondPlan.error &&
+      oldPlanAfter.data?.status === 'superseded' &&
+      newPlanRow.data?.revision === 2 &&
+      newPlanRow.data?.status === 'active' &&
+      oldActivitiesAfter.data?.[0]?.status === 'completed' &&
+      oldActivitiesAfter.data?.[1]?.status === 'superseded',
+    secondPlan.error?.message
+  );
+  const activePlans = await a.client
+    .from('study_plans')
+    .select('id')
+    .eq('user_id', a.id)
+    .eq('status', 'active');
+  check('exactly one active plan per user', (activePlans.data ?? []).length === 1);
+
   // 40. Feedback is stored, owner-scoped, and never auto-applied (spec AH).
   const feedbackIns = await a.client
     .from('question_feedback')
@@ -2165,6 +2394,13 @@ try {
     .from('simulation_actions')
     .select('id')
     .eq('session_id', simSessionId);
+  // 63 (M13). Planned activities die with the course; the plan shell (a
+  // user-level record) survives as auditable history.
+  const orphanPlanned = await admin
+    .from('planned_activities')
+    .select('id')
+    .eq('course_id', courseId);
+  const planShell = await admin.from('study_plans').select('id').eq('user_id', a.id);
   check(
     'course delete cascades to modules, exams, exam_modules, documents, sections, chunks, concepts and the assessment layer',
     (orphanModules.data ?? []).length === 0 &&
@@ -2186,8 +2422,10 @@ try {
       (orphanMastery.data ?? []).length === 0 &&
       (orphanMasteryEvents.data ?? []).length === 0 &&
       (orphanSimSessions.data ?? []).length === 0 &&
-      (orphanSimActions.data ?? []).length === 0
+      (orphanSimActions.data ?? []).length === 0 &&
+      (orphanPlanned.data ?? []).length === 0
   );
+  check('study plan shells survive course deletion (spec AM)', (planShell.data ?? []).length > 0);
   await admin.storage
     .from('course-materials')
     .remove([objectKey])

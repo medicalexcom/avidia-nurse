@@ -5,7 +5,30 @@ cross-platform student application (iOS, Android, and web/desktop) delivers cour
 study tools, persistent mastery tracking, spaced repetition, and stateful patient simulations —
 powered by AI but never dependent on any single AI provider.
 
-**Current milestone: M12 — Learning Analytics, Readiness, and Performance Intelligence.** The
+**Current milestone: M13 — Intelligent Study Planner, Calendar, Exam Countdown, and
+Notifications.** Avidia now answers "what should I study between now and my exam?" with a
+deterministic planner (`@avidia/planner`) that IS NOT ANOTHER MASTERY ENGINE — it consumes M8
+priorities/due reviews, M12 coverage and cognitive-level signals, M10 mode eligibility, and M11
+case availability to place work into the student's real availability (Light/Standard/Intensive
+presets or per-weekday custom minutes). Plans are exam-aware across multiple exams and courses
+(every recommendation stays course-scoped), reserve time for due reviews, schedule coverage
+blocks for unassessed content (unassessed ≠ weak), slot misconception remediation with
+diversity caps, and pick higher-order or simulation practice only when evidence and time
+support it. Capacity is honest: overflow is stated, then triaged (misconceptions → exam
+priorities → due reviews → coverage → higher-order → enrichment) — never silently compressed.
+Every planned item carries deterministic reason codes; recalculation regenerates from current
+evidence so missed days re-triage instead of stacking and extra study is absorbed. Plans
+persist server-side as revisions behind SECURITY DEFINER RPCs with evidence-based completion
+(a real completed session, idempotent, one session satisfies one activity) and RLS throughout.
+The Today view leads with exam countdowns in the student's timezone and START TODAY'S PLAN,
+which launches the existing M9/M10/M11 experiences; a simple week list shows what's ahead.
+Reminders are local-only (no push infrastructure), all opt-in and off by default, permission
+asked contextually in settings, quiet-hours aware, privacy-conscious in content, with
+allowlist-validated deep links — and the web app works fully without them. The whole layer is
+deterministic, LLM-free, and covered by golden scenario tests (exam-in-7-days through no-exam),
+DST/timezone tests, reminder tests, and RLS/idempotency checks.
+
+Previous milestone — M12, Learning Analytics, Readiness, and Performance Intelligence: the
 Progress and Weaknesses tabs are now live: every course gets an actionable analytics page built
 on a new pure read model (`@avidia/analytics`) that CONSUMES the M8 mastery engine rather than
 duplicating it — mastery states, review schedules, and study priorities are computed by the one

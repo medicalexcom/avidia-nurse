@@ -319,6 +319,17 @@ export function TodayScreen() {
         <Text style={styles.streakLine}>{streakLine(streak)}</Text>
       ) : null}
 
+      {/* M13 spec V: one tap from Today into the day-by-day study plan. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open your study plan"
+        onPress={() => router.push('/planner')}
+        style={styles.plannerRow}
+      >
+        <Text style={styles.dueText}>Your study plan</Text>
+        <Text style={styles.dueAction}>Open planner</Text>
+      </Pressable>
+
       <View style={styles.footer}>
         <SecondaryButton
           label="Open course"
@@ -406,6 +417,16 @@ const styles = StyleSheet.create({
   priorityName: { color: colors.text, fontWeight: '600' },
   priorityMeta: { color: colors.textMuted, fontSize: 13 },
   recentRow: { color: colors.textMuted, marginBottom: spacing(1) },
+  plannerRow: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing(4),
+    marginBottom: spacing(4),
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 44,
+  },
   footer: { marginTop: spacing(2), gap: spacing(2) },
   streakLine: { color: colors.textMuted, fontSize: 13, marginTop: spacing(3) },
 });

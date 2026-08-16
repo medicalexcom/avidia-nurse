@@ -15,14 +15,20 @@ name: Document Processing Worker
 # (see packages/rag/src/embedding.ts, packages/knowledge/src/gateway.ts,
 # packages/assessment/src/gateway.ts) rather than silently doing nothing.
 #
-# Cadence: every 15 minutes. Adjust if beta-scale usage needs tighter
-# latency or if GitHub Actions minutes become a cost concern; the worker's
-# own stale-job recovery (processor.ts / indexer.ts / knowledge.ts /
-# questions.ts) means a missed or overlapping run is always safe to retry.
+# Cadence: every 5 minutes (tightened from 15 as part of the Ask Avidia fix —
+# interactive tutor chat needs a materially shorter worst-case wait than
+# document processing does). Adjust further if beta-scale usage needs
+# tighter latency still or if GitHub Actions minutes become a cost concern;
+# the worker's own stale-job recovery (processor.ts / indexer.ts /
+# knowledge.ts / questions.ts) means a missed or overlapping run is always
+# safe to retry. This schedule is still not a substitute for real
+# interactive latency — see docs/ASK_AVIDIA_LATENCY.md for the known
+# limitation and the recommended next step (a Supabase Edge Function or
+# always-on process) if sub-minute replies become a hard requirement.
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 concurrency:

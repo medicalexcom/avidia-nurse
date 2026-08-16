@@ -11,9 +11,10 @@ export interface ModelPricing {
 }
 
 export const OPENAI_PRICING: Record<string, ModelPricing> = {
-  'gpt-5-mini': { inputPer1M: 0.25, outputPer1M: 2.0 },
-  'gpt-5.1': { inputPer1M: 1.25, outputPer1M: 10.0 },
-  'gpt-5.2': { inputPer1M: 1.75, outputPer1M: 14.0 },
+  // 2026-08: gpt-5.6 family pricing (see openai.ts for the matching model-id update).
+  'gpt-5.6-luna': { inputPer1M: 0.2, outputPer1M: 1.2 },
+  'gpt-5.6-terra': { inputPer1M: 2.0, outputPer1M: 12.0 },
+  'gpt-5.6-sol': { inputPer1M: 5.0, outputPer1M: 30.0 },
   // Embeddings have no separate output cost; OpenAI bills input tokens only.
   'text-embedding-3-small': { inputPer1M: 0.02, outputPer1M: 0 },
 };

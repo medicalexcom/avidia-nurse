@@ -110,16 +110,16 @@ describe('routeAiTask — fallback never downgrades', () => {
 describe('resolveProviderCatalog — env overrides and compatibility', () => {
   it('uses openai defaults with no env', () => {
     const catalog = resolveProviderCatalog({});
-    expect(catalog.chatModels.ECONOMY).toBe('gpt-5-mini');
-    expect(catalog.chatModels.STANDARD).toBe('gpt-5.1');
-    expect(catalog.chatModels.ADVANCED).toBe('gpt-5.2');
+    expect(catalog.chatModels.ECONOMY).toBe('gpt-5.6-luna');
+    expect(catalog.chatModels.STANDARD).toBe('gpt-5.6-terra');
+    expect(catalog.chatModels.ADVANCED).toBe('gpt-5.6-sol');
     expect(catalog.embeddingModel).toBe('text-embedding-3-small');
   });
 
   it('honors per-tier AI_MODEL_* overrides independently', () => {
     const catalog = resolveProviderCatalog({ AI_MODEL_ECONOMY: 'gpt-5-mini-preview' });
     expect(catalog.chatModels.ECONOMY).toBe('gpt-5-mini-preview');
-    expect(catalog.chatModels.STANDARD).toBe('gpt-5.1'); // untouched
+    expect(catalog.chatModels.STANDARD).toBe('gpt-5.6-terra'); // untouched
   });
 
   it('routeAiTask picks up an AI_MODEL_* override', () => {

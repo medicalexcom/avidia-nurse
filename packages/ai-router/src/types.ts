@@ -85,7 +85,7 @@ export interface AiTaskRequirements {
 export interface AiModelChoice {
   /** Provider identifier, e.g. "openai". Never a brand string baked into a tier name. */
   provider: string;
-  /** Concrete model id for that provider, e.g. "gpt-5-mini". */
+  /** Concrete model id for that provider, e.g. "gpt-5.6-luna". */
   model: string;
   tier: AiTier;
 }

@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   executeAiTask,
+  AiTaskFailedError,
   type AiComplexity,
   type AiModelChoice,
   type AiTask,
@@ -199,11 +200,21 @@ async function openAiJson(
             : response.status === 402
               ? 'quota_exceeded'
               : 'other';
+      // The status code alone ("other") is not enough to diagnose a live
+      // failure — OpenAI's error body names the actual cause (bad request,
+      // auth, model access). Safe to log: it's OpenAI's own response, never
+      // our secret key or student content beyond what we already sent.
+      let bodySnippet = '';
+      try {
+        bodySnippet = (await response.text()).slice(0, 500);
+      } catch {
+        // best-effort only
+      }
       return {
         ok: false,
         reason,
         retryableSameModel: response.status === 429 || response.status >= 500,
-        detail: `OpenAI HTTP ${response.status}`,
+        detail: `OpenAI HTTP ${response.status}${bodySnippet ? `: ${bodySnippet}` : ''}`,
       };
     }
     const payload = (await response.json()) as {
@@ -478,7 +489,18 @@ export async function processLearningRequest(
     });
     await client.complete(row.id, result);
     return 'ready';
-  } catch {
+  } catch (error) {
+    // The student-facing message must stay generic (SAFE_FAILURE); the real
+    // cause still needs to reach logs or every live failure is a black box.
+    // AiTaskFailedError carries the provider-level detail (HTTP status +
+    // body) in `.detail` — never in `.message`, which is student-safe.
+    const detail =
+      error instanceof AiTaskFailedError
+        ? error.detail
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    console.error(`[worker] learning request ${row.id} (${row.kind}) failed: ${detail}`);
     await client.fail(row.id, SAFE_FAILURE);
     return 'failed';
   }

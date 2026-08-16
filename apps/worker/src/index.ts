@@ -27,6 +27,10 @@ import { createSupabaseIndexerClient } from './supabaseIndexerClient';
 import { createSupabaseKnowledgeClient } from './supabaseKnowledgeClient';
 import { createSupabaseQuestionsClient } from './supabaseQuestionsClient';
 import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWorkerClient';
+import {
+  createSupabaseLearningGenerationClient,
+  processLearningRequest,
+} from './learningGeneration';
 
 /**
  * Worker entry point (spec J; M5 spec I/O).
@@ -87,7 +91,9 @@ async function runOnce(
   knowledge: KnowledgeClient,
   concepts: ConceptExtractionProvider,
   questions: QuestionsClient,
-  questionProvider: QuestionGenerationProvider
+  questionProvider: QuestionGenerationProvider,
+  learning: ReturnType<typeof createSupabaseLearningGenerationClient>,
+  apiKey: string
 ): Promise<void> {
   await sweepStale(client, indexer, knowledge, questions);
   const outcomes = await drainQueue(client);
@@ -141,6 +147,11 @@ async function runOnce(
     }
   }
   log(`drained question queue: ${generated.length} document(s) generated`);
+  let learningCount = 0;
+  while ((await processLearningRequest(learning, embeddings, apiKey, process.env)) !== 'idle') {
+    learningCount += 1;
+  }
+  log(`drained personalized learning queue: ${learningCount} request(s)`);
 }
 
 async function runLoop(
@@ -150,7 +161,9 @@ async function runLoop(
   knowledge: KnowledgeClient,
   concepts: ConceptExtractionProvider,
   questions: QuestionsClient,
-  questionProvider: QuestionGenerationProvider
+  questionProvider: QuestionGenerationProvider,
+  learning: ReturnType<typeof createSupabaseLearningGenerationClient>,
+  apiKey: string
 ): Promise<never> {
   log(`polling every ${POLL_INTERVAL_MS / 1000}s`);
   let lastSweep = 0;
@@ -225,6 +238,13 @@ async function runLoop(
         log(`document ${questionsOutcome.documentId} question generation failed`);
         continue;
       }
+      const learningOutcome = await processLearningRequest(
+        learning,
+        embeddings,
+        apiKey,
+        process.env
+      );
+      if (learningOutcome !== 'idle') continue;
     } catch (error) {
       log(`worker error: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -247,11 +267,34 @@ async function main(): Promise<void> {
   const concepts = createConceptExtractionProviderFromEnv(process.env);
   const questions = createSupabaseQuestionsClient(supabase);
   const questionProvider = createQuestionGenerationProviderFromEnv(process.env);
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('Personalized learning generation requires OPENAI_API_KEY.');
+  const learning = createSupabaseLearningGenerationClient(supabase, embeddings);
   if (process.argv.includes('--once')) {
-    await runOnce(client, indexer, embeddings, knowledge, concepts, questions, questionProvider);
+    await runOnce(
+      client,
+      indexer,
+      embeddings,
+      knowledge,
+      concepts,
+      questions,
+      questionProvider,
+      learning,
+      apiKey
+    );
     return;
   }
-  await runLoop(client, indexer, embeddings, knowledge, concepts, questions, questionProvider);
+  await runLoop(
+    client,
+    indexer,
+    embeddings,
+    knowledge,
+    concepts,
+    questions,
+    questionProvider,
+    learning,
+    apiKey
+  );
 }
 
 main().catch((error) => {

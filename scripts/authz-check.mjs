@@ -2617,7 +2617,53 @@ try {
     aExport.error?.message
   );
 
-  // 71. delete_my_account: billing guard, then full removal.
+  // 71. Personalized AI learning + tutor rows are owner/course scoped.
+  const conversation = await a.client
+    .from('tutor_conversations')
+    .insert({ user_id: a.id, course_id: courseId, title: 'Private tutor context' })
+    .select('id')
+    .single();
+  check('owner creates a tutor conversation in own course', !conversation.error);
+  const conversationId = conversation.data?.id;
+  const ownMessage = await a.client.from('tutor_messages').insert({
+    conversation_id: conversationId,
+    user_id: a.id,
+    role: 'user',
+    content: 'Explain potassium shifts.',
+  });
+  check('owner writes own user tutor message', !ownMessage.error);
+  const bConversation = await b.client
+    .from('tutor_conversations')
+    .select('id')
+    .eq('id', conversationId);
+  check("user B reads none of A's tutor conversation", (bConversation.data ?? []).length === 0);
+  const bMessage = await b.client
+    .from('tutor_messages')
+    .select('id')
+    .eq('conversation_id', conversationId);
+  check("user B reads none of A's tutor messages", (bMessage.data ?? []).length === 0);
+  const forgedConversation = await b.client.from('tutor_conversations').insert({
+    user_id: b.id,
+    course_id: courseId,
+    title: 'Forged cross-course tutor',
+  });
+  check("user B cannot create a conversation in A's course", Boolean(forgedConversation.error));
+  const learningRequest = await a.client.from('ai_learning_requests').insert({
+    user_id: a.id,
+    course_id: courseId,
+    kind: 'case_study',
+    request: { mode: 'recommended' },
+  });
+  check('owner queues personalized learning in own course', !learningRequest.error);
+  const bRequests = await b.client
+    .from('ai_learning_requests')
+    .select('id')
+    .eq('course_id', courseId);
+  check("user B reads none of A's learning requests", (bRequests.data ?? []).length === 0);
+  const claimAttempt = await a.client.rpc('claim_ai_learning_request');
+  check('client cannot claim the server-only learning queue', Boolean(claimAttempt.error));
+
+  // 72. delete_my_account: billing guard, then full removal.
   const guardedDelete = await a.client.rpc('delete_my_account');
   check(
     'account deletion is refused while the subscription would keep charging',

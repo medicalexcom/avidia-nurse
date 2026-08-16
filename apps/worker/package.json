@@ -19,6 +19,7 @@
     "@avidia/ingestion": "workspace:*",
     "@avidia/knowledge": "workspace:*",
     "@avidia/rag": "workspace:*",
+    "@avidia/simulation": "workspace:*",
     "@supabase/supabase-js": "^2.112.3"
   },
   "devDependencies": {

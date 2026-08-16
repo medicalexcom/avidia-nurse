@@ -227,6 +227,14 @@ describe('scripted provider (keyless dev/test seam)', () => {
 });
 
 describe('provider selection from environment (spec I)', () => {
+  it('honors the central ECONOMY tier override', () => {
+    const provider = createQuestionGenerationProviderFromEnv({
+      OPENAI_API_KEY: 'sk-test',
+      AI_MODEL_ECONOMY: 'account-economy-model',
+    });
+    expect(provider.metadata().model).toBe('account-economy-model');
+  });
+
   it('selects openai with a key, scripted explicitly, and fails otherwise', () => {
     expect(
       createQuestionGenerationProviderFromEnv({

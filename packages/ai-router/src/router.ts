@@ -9,7 +9,10 @@ import { AiModelChoice, AiRouteResult, AiTaskRequest, AiTier, CHAT_TIER_RANK } f
  * packages call this (or the higher-level `executeAiTask` in execute.ts)
  * instead of ever writing a model id.
  */
-export function routeAiTask(request: AiTaskRequest, env: Record<string, string | undefined> = process.env): AiRouteResult {
+export function routeAiTask(
+  request: AiTaskRequest,
+  env: Record<string, string | undefined> = process.env
+): AiRouteResult {
   const catalog = resolveProviderCatalog(env);
 
   if (request.task === 'EMBEDDING') {

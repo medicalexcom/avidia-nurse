@@ -15,34 +15,33 @@ one file, stop — add (or reuse) a task in `types.ts` instead.
 
 ## Tiers
 
-| Tier | Model (2026-08-15) | Price (in/out per 1M tokens) | Used for |
-|---|---|---|---|
-| SPECIALIZED | `text-embedding-3-small` | $0.02 / — | Embeddings only (never on the chat ladder) |
-| ECONOMY | `gpt-5.6-luna` | $0.20 / $1.20 | High-volume, structured, validated downstream |
-| STANDARD | `gpt-5.6-terra` | $2.00 / $12.00 | Retrieval-grounded answers, complex generation |
-| ADVANCED | `gpt-5.6-sol` | $5.00 / $30.00 | Deep reasoning; never silently downgraded |
+| Tier        | Default model            | Price (in/out per 1M tokens) | Used for                                       |
+| ----------- | ------------------------ | ---------------------------- | ---------------------------------------------- |
+| SPECIALIZED | `text-embedding-3-small` | $0.02 / —                    | Embeddings only (never on the chat ladder)     |
+| ECONOMY     | `gpt-5-mini`             | $0.25 / $2.00                | High-volume, structured, validated downstream  |
+| STANDARD    | `gpt-5.1`                | $1.25 / $10.00               | Retrieval-grounded answers, complex generation |
+| ADVANCED    | `gpt-5.2`                | $1.75 / $14.00               | Deep reasoning; never silently downgraded      |
 
-Verified live against OpenAI's own model documentation on 2026-08-15 — not
-carried forward from earlier assumptions (GPT-5 / GPT-5 mini / GPT-5.1 are
-superseded). Re-verify with `pnpm --filter @avidia/worker verify-models`
-(see below) whenever OpenAI ships a new generation.
+These identifiers are code-verified defaults, not a claim of access by a
+particular account. Re-verify with `pnpm --filter @avidia/worker verify-models`
+before deployment and whenever OpenAI changes the account catalog.
 
 ## Task -> tier mapping
 
-| Task | Tier | Notes |
-|---|---|---|
-| `EMBEDDING` | SPECIALIZED | Bypasses the tier ladder; no fallback (different embedding models produce incomparable vectors) |
-| `CONCEPT_EXTRACTION` | ECONOMY | Live: `packages/knowledge/src/gateway.ts` |
-| `QUESTION_GENERATION_ROUTINE` | ECONOMY | Live: `packages/assessment/src/gateway.ts` |
-| `BASIC_EXPLANATION` | ECONOMY | |
-| `QUESTION_GENERATION_COMPLEX` | STANDARD | |
-| `RAG_ANSWER` | STANDARD | |
-| `SIMULATION_DIALOGUE` | STANDARD | |
-| `CASE_STUDY_GENERATION` | STANDARD (HIGH complexity -> ADVANCED) | Only chat task whose tier depends on `complexity` |
-| `QUESTION_REPAIR` | ECONOMY by default; floors at `requirements.minTier` | "Same tier, escalate only if necessary" |
-| `DEEP_TUTORING` | ADVANCED | No fallback — nothing above ADVANCED |
-| `CLINICAL_REASONING_EVALUATION` | ADVANCED | No fallback |
-| `SIMULATION_CASE_GENERATION` | ADVANCED | No fallback |
+| Task                            | Tier                                                 | Notes                                                                                           |
+| ------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `EMBEDDING`                     | SPECIALIZED                                          | Bypasses the tier ladder; no fallback (different embedding models produce incomparable vectors) |
+| `CONCEPT_EXTRACTION`            | ECONOMY                                              | Live: `packages/knowledge/src/gateway.ts`                                                       |
+| `QUESTION_GENERATION_ROUTINE`   | ECONOMY                                              | Live: `packages/assessment/src/gateway.ts`                                                      |
+| `BASIC_EXPLANATION`             | ECONOMY                                              |                                                                                                 |
+| `QUESTION_GENERATION_COMPLEX`   | STANDARD                                             |                                                                                                 |
+| `RAG_ANSWER`                    | STANDARD                                             |                                                                                                 |
+| `SIMULATION_DIALOGUE`           | STANDARD                                             |                                                                                                 |
+| `CASE_STUDY_GENERATION`         | STANDARD (HIGH complexity -> ADVANCED)               | Only chat task whose tier depends on `complexity`                                               |
+| `QUESTION_REPAIR`               | ECONOMY by default; floors at `requirements.minTier` | "Same tier, escalate only if necessary"                                                         |
+| `DEEP_TUTORING`                 | ADVANCED                                             | No fallback — nothing above ADVANCED                                                            |
+| `CLINICAL_REASONING_EVALUATION` | ADVANCED                                             | No fallback                                                                                     |
+| `SIMULATION_CASE_GENERATION`    | ADVANCED                                             | No fallback                                                                                     |
 
 Fallback for every other task is always the next tier **up** — never a
 downgrade — unless `requirements.allowFallback: false` is set.
@@ -55,8 +54,8 @@ Routing decision only (no I/O):
 import { routeAiTask } from '@avidia/ai-router';
 
 const route = routeAiTask({ task: 'RAG_ANSWER', complexity: 'MEDIUM' });
-// { provider: 'openai', model: 'gpt-5.6-terra', tier: 'STANDARD',
-//   fallback: { provider: 'openai', model: 'gpt-5.6-sol', tier: 'ADVANCED' } }
+// { provider: 'openai', model: 'gpt-5.1', tier: 'STANDARD',
+//   fallback: { provider: 'openai', model: 'gpt-5.2', tier: 'ADVANCED' } }
 ```
 
 Routing + bounded retry + safe fallback + observability, for a new call site:
@@ -89,8 +88,8 @@ predate the router and keep their own proven bounded-retry HTTP loop rather
 than being rewritten onto `executeAiTask` (see ADR-0040 section 4 for why).
 What changed for them:
 
-- Their default model id now comes from `OPENAI_CHAT_MODELS.ECONOMY` in
-  `openai.ts`, not a local hard-coded string.
+- Their default model is resolved through `routeAiTask()` using the supplied
+  server environment; central `AI_MODEL_ECONOMY` overrides reach live callers.
 - Each call emits one `AiRouterEvent` (success or failure) via
   `emitAiRouterEvent`, so they show up in the same telemetry stream as
   router-native call sites.
@@ -109,14 +108,14 @@ Read from `process.env` (or an equivalent server env map) by the worker/
 backend only. **Never** prefix any of these `EXPO_PUBLIC_` — that would ship
 them to the client bundle.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `OPENAI_API_KEY` | — (required) | Provider credential |
-| `AI_PROVIDER` | `openai` | Selects the provider catalog |
-| `AI_MODEL_ECONOMY` / `AI_MODEL_STANDARD` / `AI_MODEL_ADVANCED` | tier defaults above | Per-tier override, independent of each other |
-| `AI_MODEL_EMBEDDING` | `text-embedding-3-small` | Embedding model override (router-native call sites only — `packages/rag` doesn't read this) |
-| `CONCEPT_MODEL`, `QUESTION_MODEL` | router ECONOMY default | Legacy per-gateway override, still honored (takes precedence over `AI_MODEL_ECONOMY` at those two call sites) |
-| `CONCEPT_PROVIDER`, `QUESTION_PROVIDER`, `EMBEDDING_PROVIDER` | `openai` | Legacy provider selection (`scripted`/`hashing` for keyless dev/test) — unchanged by this work |
+| Variable                                                       | Default                  | Purpose                                                                                                       |
+| -------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                                               | — (required)             | Provider credential                                                                                           |
+| `AI_PROVIDER`                                                  | `openai`                 | Selects the provider catalog                                                                                  |
+| `AI_MODEL_ECONOMY` / `AI_MODEL_STANDARD` / `AI_MODEL_ADVANCED` | tier defaults above      | Per-tier override, independent of each other                                                                  |
+| `AI_MODEL_EMBEDDING`                                           | `text-embedding-3-small` | Embedding model override (router-native call sites only — `packages/rag` doesn't read this)                   |
+| `CONCEPT_MODEL`, `QUESTION_MODEL`                              | router ECONOMY default   | Legacy per-gateway override, still honored (takes precedence over `AI_MODEL_ECONOMY` at those two call sites) |
+| `CONCEPT_PROVIDER`, `QUESTION_PROVIDER`, `EMBEDDING_PROVIDER`  | `openai`                 | Legacy provider selection (`scripted`/`hashing` for keyless dev/test) — unchanged by this work                |
 
 ## Never routed to an LLM
 

@@ -885,6 +885,31 @@ export function PracticeScreen({
       ) : null}
       {phase.result ? <FlagQuestionPanel questionId={question.id} courseId={courseId} /> : null}
       {phase.result ? (
+        <View style={styles.flagPanel}>
+          {(
+            [
+              ['Ask Avidia', ''],
+              ['Explain this', 'Explain this.'],
+              ['Why was I wrong?', 'Why was I wrong?'],
+              ['Simplify', 'Simplify.'],
+              ['Go deeper', 'Go deeper.'],
+              ['Give me an example', 'Give me an example.'],
+              ['Quiz me again', 'Quiz me.'],
+            ] as const
+          ).map(([label, prompt]) => (
+            <SecondaryButton
+              key={label}
+              label={label}
+              onPress={() =>
+                router.push(
+                  `/course/${courseId}/ask-avidia?questionId=${question.id}&prompt=${encodeURIComponent(prompt)}`
+                )
+              }
+            />
+          ))}
+        </View>
+      ) : null}
+      {phase.result ? (
         <PrimaryButton
           label={phase.index + 1 >= ordered.length ? 'See results' : 'Next question'}
           onPress={onNext}

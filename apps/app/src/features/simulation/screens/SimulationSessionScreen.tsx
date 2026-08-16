@@ -12,6 +12,7 @@ import { ErrorBanner, PrimaryButton, Screen, SecondaryButton } from '../../../ui
 import { colors, spacing } from '../../../ui/theme';
 import {
   abandonSimulation,
+  getSimulationCourseId,
   getSimulationView,
   newIdempotencyKey,
   submitSimulationAction,
@@ -84,6 +85,7 @@ export function SimulationSessionScreen({ sessionId }: { sessionId: string }) {
   const [promptPickerFor, setPromptPickerFor] = useState<string | null>(null);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [hintShown, setHintShown] = useState(false);
+  const [courseId, setCourseId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const client = getSupabase();
@@ -94,9 +96,13 @@ export function SimulationSessionScreen({ sessionId }: { sessionId: string }) {
     try {
       // Server-side resume (spec X): the authoritative state rebuilds the
       // view; nothing about the session is trusted from this device.
-      const result = await getSimulationView(client, sessionId);
+      const [result, sessionCourseId] = await Promise.all([
+        getSimulationView(client, sessionId),
+        getSimulationCourseId(client, sessionId),
+      ]);
       setView(result.view);
       setStatus(result.status);
+      setCourseId(sessionCourseId);
       setError(null);
     } catch {
       setError('We could not load this simulation session.');
@@ -366,6 +372,16 @@ export function SimulationSessionScreen({ sessionId }: { sessionId: string }) {
             </View>
           ))}
           <SecondaryButton label={hintShown ? 'Hide hint' : 'Need a hint?'} onPress={onHint} />
+          {courseId ? (
+            <SecondaryButton
+              label="Ask Avidia about revealed information"
+              onPress={() =>
+                router.push(
+                  `/course/${courseId}/ask-avidia?contextType=active_simulation&sessionId=${sessionId}`
+                )
+              }
+            />
+          ) : null}
           {hintShown ? (
             <Text style={styles.hint}>
               Work the nursing process: assess first (look, listen, measure), recognize what the

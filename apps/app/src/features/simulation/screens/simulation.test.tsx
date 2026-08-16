@@ -53,6 +53,7 @@ jest.mock('../simulationApi', () => ({
   startSimulation: jest.fn(),
   submitSimulationAction: jest.fn(),
   getSimulationView: jest.fn(),
+  getSimulationCourseId: jest.fn(),
   abandonSimulation: jest.fn(),
   getSimulationDebrief: jest.fn(),
 }));
@@ -100,6 +101,7 @@ beforeEach(() => {
   mocked(coursesApi.fetchOwnCourse).mockResolvedValue(course);
   mocked(simulationApi.listSimulationCases).mockResolvedValue([caseRow]);
   mocked(simulationApi.listOwnSimulationSessions).mockResolvedValue([]);
+  mocked(simulationApi.getSimulationCourseId).mockResolvedValue('course-1');
 });
 
 describe('SimulationLibraryScreen', () => {

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { getSupabase } from '../../../lib/supabase';
 import { ErrorBanner, PrimaryButton, Screen, SecondaryButton } from '../../../ui/components';
 import { colors, spacing } from '../../../ui/theme';
+import { getSimulationView } from '../../simulation/simulationApi';
 import {
   getOrCreateConversation,
   listTutorMessages,
@@ -49,7 +51,12 @@ export function AskAvidiaScreen({
     if (!content || !client || !user || !conversation) return;
     setBusy(true);
     try {
-      await sendTutorMessage(client, user.id, courseId, conversation.id, content, context);
+      let requestContext = context;
+      if (context.contextType === 'active_simulation' && typeof context.sessionId === 'string') {
+        const simulation = await getSimulationView(client, context.sessionId);
+        requestContext = { ...context, revealedState: simulation.view };
+      }
+      await sendTutorMessage(client, user.id, courseId, conversation.id, content, requestContext);
       setText('');
       await load();
     } catch {
@@ -90,6 +97,12 @@ export function AskAvidiaScreen({
               Grounded in {m.source_chunk_ids.length} course source
               {m.source_chunk_ids.length === 1 ? '' : 's'}.
             </Text>
+          ) : null}
+          {m.task === 'QUESTION_GENERATION_ROUTINE' ? (
+            <SecondaryButton
+              label="Start a scored adaptive quiz"
+              onPress={() => router.push(`/course/${courseId}/practice?mode=adaptive`)}
+            />
           ) : null}
         </View>
       ))}

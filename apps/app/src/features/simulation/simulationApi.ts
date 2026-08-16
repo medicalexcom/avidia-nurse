@@ -203,6 +203,20 @@ export async function getSimulationView(
   return data as SimulationViewResult;
 }
 
+/** Owner/course context for safe navigation into Ask Avidia. */
+export async function getSimulationCourseId(
+  client: SupabaseClient,
+  sessionId: string
+): Promise<string> {
+  const { data, error } = await client
+    .from('simulation_sessions')
+    .select('course_id')
+    .eq('id', sessionId)
+    .single();
+  if (error) throw error;
+  return String(data.course_id);
+}
+
 /** Abandon an active session (spec V): no score, no mastery evidence. */
 export async function abandonSimulation(client: SupabaseClient, sessionId: string): Promise<void> {
   const { error } = await client.rpc('abandon_simulation', { p_session_id: sessionId });

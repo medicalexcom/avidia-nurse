@@ -12,8 +12,8 @@ acceptance matrix and journey record).
 **READY WITH NON-BLOCKING LIMITATIONS — conditional on founder
 infrastructure setup.**
 
-The codebase is complete, validated (867 automated tests, CI fully
-green, zero open P0/P1 defects), and hardened. What stands between
+The codebase is substantially implemented and locally validated (914 automated
+tests). Live CI/authz/model verification and founder acceptance remain required. What stands between
 today and a real beta is not code: it is provisioning (Supabase
 projects, AI keys, Apple/Stripe accounts), seed content authoring, and
 one live end-to-end verification pass on real infrastructure. Those are
@@ -21,7 +21,7 @@ Stage 1–3 of `RELEASE_CHECKLIST.md`.
 
 ## What is proven by automated evidence
 
-- All 13 packages pass: entitlements 25, planner 46, analytics 65,
+- All workspace packages pass; the current aggregate is 100 suites / 914 tests. Historical M15 package counts were: entitlements 25, planner 46, analytics 65,
   simulation 107, mastery 90, assessment 49, knowledge 65, rag 48,
   domain 81, ingestion 10, worker 41, config 10, app 230 — 867 total.
 - Golden regression suites cover mastery scenarios, planner cases A–H,

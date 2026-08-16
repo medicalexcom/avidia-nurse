@@ -408,6 +408,18 @@ export async function processLearningRequest(
       await client.complete(row.id, result);
       return 'ready';
     }
+    if (/\bquiz me(?: again)?\b/i.test(message)) {
+      const result = await client.storeTutor({
+        row,
+        content:
+          'Your scored adaptive quiz is ready. It uses your existing validated question bank and the same deterministic scoring and mastery pipeline as Study.',
+        sources,
+        task: 'QUESTION_GENERATION_ROUTINE',
+        tier: 'ECONOMY',
+      });
+      await client.complete(row.id, { ...result, action: 'start_adaptive_quiz' });
+      return 'ready';
+    }
     const handoffKind = /create (?:a )?simulation|simulation on this/i.test(message)
       ? 'simulation'
       : /give me a case|create (?:a )?case/i.test(message)

@@ -139,6 +139,51 @@ describe('personalized learning generation', () => {
     expect(complete).toHaveBeenCalled();
   });
 
+  it('hands Quiz me to the existing scored adaptive question experience', async () => {
+    const complete = jest.fn();
+    const storeTutor = jest.fn(async (_args: Record<string, unknown>) => ({ id: 'assistant' }));
+    const client: LearningGenerationClient = {
+      claim: async () => ({
+        id: 'quiz-request',
+        user_id: 'u1',
+        course_id: 'c1',
+        kind: 'tutor',
+        request: { message: 'Quiz me.', conversationId: 'conversation' },
+        fingerprint: null,
+      }),
+      loadContext: async () => ({
+        courseTitle: 'Adult Health',
+        concepts,
+        history: [],
+        explicitContext: '',
+        upcomingExam: null,
+      }),
+      search: async () => [
+        {
+          chunk_id: 'source',
+          document_id: 'doc',
+          document_filename: 'lecture.pdf',
+          content: 'Course source.',
+          source_locator: { type: 'pdf', page: 1 },
+        },
+      ],
+      storeCase: jest.fn(),
+      storeSimulation: jest.fn(),
+      storeTutor,
+      enqueueHandoff: jest.fn(),
+      complete,
+      fail: jest.fn(),
+    };
+    expect(await processLearningRequest(client, {} as never, 'unused', {})).toBe('ready');
+    expect(storeTutor).toHaveBeenCalledWith(
+      expect.objectContaining({ task: 'QUESTION_GENERATION_ROUTINE', tier: 'ECONOMY' })
+    );
+    expect(complete).toHaveBeenCalledWith(
+      'quiz-request',
+      expect.objectContaining({ action: 'start_adaptive_quiz' })
+    );
+  });
+
   it('fails safely when no grounded source is available', async () => {
     const fail = jest.fn();
     const client = {

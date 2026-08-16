@@ -303,7 +303,7 @@ describe('personalized learning generation', () => {
     }
   });
 
-it('fails safely when no grounded source is available', async () => {
+  it('fails safely when no grounded source is available', async () => {
     const fail = jest.fn();
     const client = {
       claim: async () => ({

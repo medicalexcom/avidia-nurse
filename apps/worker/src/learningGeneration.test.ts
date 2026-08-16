@@ -239,7 +239,71 @@ describe('personalized learning generation', () => {
     }
   });
 
-  it('fails safely when no grounded source is available', async () => {
+  it('sends OpenAI messages that contain the word "json" for every json_object request', async () => {
+    // Regression test for a live-only bug: OpenAI's chat completions API
+    // rejects response_format: { type: 'json_object' } with an HTTP 400
+    // unless the literal word "json" appears somewhere in `messages`. The
+    // tutor system prompt used to describe the required shape
+    // (`{"answer":"..."}`) without ever using the word "json", so every
+    // real tutor call failed while this suite's mocked fetch (which never
+    // validates the request body) stayed green. Assert on the actual
+    // request payload so this class of bug cannot hide behind a mock again.
+    const originalFetch = global.fetch;
+    const seenBodies: Array<{ messages: Array<{ content: string }>; response_format?: unknown }> =
+      [];
+    global.fetch = jest.fn(async (_url: unknown, init: unknown) => {
+      const body = JSON.parse((init as { body: string }).body);
+      seenBodies.push(body);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            { message: { content: JSON.stringify({ answer: 'AIDS is diagnosed when...' }) } },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+    try {
+      const client: LearningGenerationClient = {
+        claim: async () => ({
+          id: 'r-json-mode',
+          user_id: 'u1',
+          course_id: 'c1',
+          kind: 'tutor',
+          request: { message: 'when does HIV is considered AIDS?', conversationId: 'conversation' },
+          fingerprint: null,
+        }),
+        loadContext: async () => ({
+          courseTitle: 'Adult Health',
+          concepts,
+          history: [],
+          explicitContext: '',
+          upcomingExam: null,
+        }),
+        search: async () => [],
+        storeCase: jest.fn(),
+        storeSimulation: jest.fn(),
+        storeTutor: jest.fn(async () => ({ id: 'assistant' })),
+        enqueueHandoff: jest.fn(),
+        complete: jest.fn(),
+        fail: jest.fn(),
+      };
+      const result = await processLearningRequest(client, {} as never, 'test-key', {});
+      expect(result).toBe('ready');
+      expect(seenBodies.length).toBeGreaterThan(0);
+      for (const body of seenBodies) {
+        if ((body.response_format as { type?: string } | undefined)?.type !== 'json_object')
+          continue;
+        const combined = body.messages.map((m) => m.content).join('\n');
+        expect(combined.toLowerCase()).toContain('json');
+      }
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+it('fails safely when no grounded source is available', async () => {
     const fail = jest.fn();
     const client = {
       claim: async () => ({

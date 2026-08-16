@@ -184,6 +184,61 @@ describe('personalized learning generation', () => {
     );
   });
 
+  it('answers tutor questions from general knowledge, honestly labeled, when no course source matches', async () => {
+    // Regression test for the Ask Avidia bug: a tutor request used to hard
+    // -fail (and never produce an assistant message) whenever retrieval
+    // found zero course-grounded chunks, even though the student still
+    // deserves an answer. case_study/simulation must still require sources
+    // (see "fails safely when no grounded source is available" below).
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ answer: 'HIV progresses to AIDS.' }) } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      }),
+    })) as unknown as typeof fetch;
+    try {
+      const complete = jest.fn();
+      const fail = jest.fn();
+      const storeTutor = jest.fn(async (_args: Record<string, unknown>) => ({ id: 'assistant' }));
+      const client: LearningGenerationClient = {
+        claim: async () => ({
+          id: 'r3',
+          user_id: 'u1',
+          course_id: 'c1',
+          kind: 'tutor',
+          request: { message: 'when does HIV is considered AIDS?', conversationId: 'conversation' },
+          fingerprint: null,
+        }),
+        loadContext: async () => ({
+          courseTitle: 'Adult Health',
+          concepts,
+          history: [],
+          explicitContext: '',
+          upcomingExam: null,
+        }),
+        search: async () => [],
+        storeCase: jest.fn(),
+        storeSimulation: jest.fn(),
+        storeTutor,
+        enqueueHandoff: jest.fn(),
+        complete,
+        fail,
+      };
+      const result = await processLearningRequest(client, {} as never, 'test-key', {});
+      expect(result).toBe('ready');
+      expect(fail).not.toHaveBeenCalled();
+      expect(complete).toHaveBeenCalled();
+      const stored = storeTutor.mock.calls[0]?.[0] as { content: string; sources: unknown[] };
+      expect(stored.sources).toEqual([]);
+      expect(stored.content).toMatch(/general nursing knowledge/i);
+      expect(stored.content).toMatch(/HIV progresses to AIDS/);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('fails safely when no grounded source is available', async () => {
     const fail = jest.fn();
     const client = {

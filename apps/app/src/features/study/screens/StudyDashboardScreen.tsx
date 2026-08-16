@@ -197,6 +197,18 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
 
       <View style={styles.footerActions}>
         <SecondaryButton
+          label="Case Studies"
+          onPress={() => router.push(`/course/${courseId}/case-studies`)}
+        />
+        <SecondaryButton
+          label="Simulations"
+          onPress={() => router.push(`/course/${courseId}/simulation`)}
+        />
+        <SecondaryButton
+          label="Ask Avidia"
+          onPress={() => router.push(`/course/${courseId}/ask-avidia`)}
+        />
+        <SecondaryButton
           label="Free practice"
           onPress={() => router.push(`/course/${courseId}/practice`)}
         />

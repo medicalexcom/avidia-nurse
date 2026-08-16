@@ -1,5 +1,7 @@
 # Beta Readiness
 
+> **2026-08-16 finalization:** dynamic case studies, validated simulation authoring, and Ask Avidia are now code-complete behind migration 0018 and the server worker. Live founder acceptance remains required with Supabase/OpenAI credentials.
+
 Verdict, evidence, and conditions for the Avidia Nurse v1 closed beta.
 Assessed 2026-08-14 at the M15 commit. Companion documents:
 `KNOWN_LIMITATIONS.md`, `RELEASE_CHECKLIST.md`, `worklogs/M15.md` (full

@@ -1,5 +1,5 @@
 import { CONCEPT_RELATIONSHIP_TYPES, CONCEPT_TYPES } from '@avidia/domain';
-import { OPENAI_CHAT_MODELS, emitAiRouterEvent } from '@avidia/ai-router';
+import { emitAiRouterEvent, routeAiTask } from '@avidia/ai-router';
 
 import { ExtractionChunk, RawExtraction, extractionJsonSchema, validateExtraction } from './schema';
 
@@ -59,7 +59,10 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
  * below) still overrides this default, preserving the pre-router env
  * contract (spec section 7).
  */
-export const OPENAI_CONCEPT_MODEL = OPENAI_CHAT_MODELS.ECONOMY;
+export const OPENAI_CONCEPT_MODEL = routeAiTask({
+  task: 'CONCEPT_EXTRACTION',
+  complexity: 'MEDIUM',
+}).model;
 const MAX_ATTEMPTS = 3;
 
 /**
@@ -130,7 +133,8 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
         retryCount: 0,
         usedFallback: false,
         success: false,
-        failureReason: error instanceof ConceptExtractionFailedError ? String(error.status ?? 'other') : 'other',
+        failureReason:
+          error instanceof ConceptExtractionFailedError ? String(error.status ?? 'other') : 'other',
       });
       throw error;
     }
@@ -319,7 +323,8 @@ export function createConceptExtractionProviderFromEnv(
     if (!apiKey) {
       throw new Error('CONCEPT_PROVIDER=openai requires OPENAI_API_KEY.');
     }
-    return new OpenAIConceptExtractionProvider(apiKey, env.CONCEPT_MODEL ?? OPENAI_CONCEPT_MODEL);
+    const route = routeAiTask({ task: 'CONCEPT_EXTRACTION', complexity: 'MEDIUM' }, env);
+    return new OpenAIConceptExtractionProvider(apiKey, env.CONCEPT_MODEL ?? route.model);
   }
   if (provider === 'scripted') {
     // Deterministic keyless extraction for development only.

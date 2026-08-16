@@ -50,12 +50,16 @@ import { join, relative } from 'node:path';
 const ROOT = new URL('..', import.meta.url).pathname;
 
 const SCAN_TARGETS = [
-  { label: 'mastery calculation, spaced repetition, study priority (M8)', path: 'packages/mastery/src' },
+  {
+    label: 'mastery calculation, spaced repetition, study priority (M8)',
+    path: 'packages/mastery/src',
+  },
   { label: 'planner scheduling (M9)', path: 'packages/planner/src' },
   { label: 'analytics math (M12)', path: 'packages/analytics/src' },
   { label: 'billing entitlement (M14)', path: 'packages/entitlements/src' },
   {
-    label: 'M11 simulation state transitions + scoring (deterministic runtime — never modified by the AI-routing task)',
+    label:
+      'M11 simulation state transitions + scoring (deterministic runtime — never modified by the AI-routing task)',
     path: 'packages/simulation/src',
   },
   { label: 'question scoring, dosage arithmetic (M7)', path: 'packages/assessment/src/score.ts' },
@@ -114,6 +118,8 @@ if (violations === 0) {
   );
   process.exit(0);
 } else {
-  console.log(`\n${violations} violation(s) found. These paths must never call an LLM (spec section 4).`);
+  console.log(
+    `\n${violations} violation(s) found. These paths must never call an LLM (spec section 4).`
+  );
   process.exit(1);
 }

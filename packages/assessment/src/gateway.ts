@@ -4,7 +4,7 @@ import {
   QUESTION_DIFFICULTIES,
   QUESTION_TYPES,
 } from '@avidia/domain';
-import { OPENAI_CHAT_MODELS, emitAiRouterEvent } from '@avidia/ai-router';
+import { emitAiRouterEvent, routeAiTask } from '@avidia/ai-router';
 
 import {
   GenerationChunk,
@@ -74,7 +74,10 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
  * below) still overrides this default, preserving the pre-router env
  * contract (spec section 7).
  */
-export const OPENAI_QUESTION_MODEL = OPENAI_CHAT_MODELS.ECONOMY;
+export const OPENAI_QUESTION_MODEL = routeAiTask({
+  task: 'QUESTION_GENERATION_ROUTINE',
+  complexity: 'MEDIUM',
+}).model;
 const MAX_ATTEMPTS = 3;
 
 /**
@@ -157,7 +160,10 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
         retryCount: 0,
         usedFallback: false,
         success: false,
-        failureReason: error instanceof QuestionGenerationFailedError ? String(error.status ?? 'other') : 'other',
+        failureReason:
+          error instanceof QuestionGenerationFailedError
+            ? String(error.status ?? 'other')
+            : 'other',
       });
       throw error;
     }
@@ -400,10 +406,8 @@ export function createQuestionGenerationProviderFromEnv(
     if (!apiKey) {
       throw new Error('QUESTION_PROVIDER=openai requires OPENAI_API_KEY.');
     }
-    return new OpenAIQuestionGenerationProvider(
-      apiKey,
-      env.QUESTION_MODEL ?? OPENAI_QUESTION_MODEL
-    );
+    const route = routeAiTask({ task: 'QUESTION_GENERATION_ROUTINE', complexity: 'MEDIUM' }, env);
+    return new OpenAIQuestionGenerationProvider(apiKey, env.QUESTION_MODEL ?? route.model);
   }
   if (provider === 'scripted') {
     // Deterministic keyless generation for development only.

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '../../auth/AuthProvider';
@@ -15,6 +15,7 @@ import {
   type SimulationCaseRow,
   type SimulationSessionRow,
 } from '../simulationApi';
+import { requestLearningArtifact } from '../../aiLearning/aiLearningApi';
 
 /**
  * Simulation case library — M11 (spec AE/AF/X).
@@ -32,6 +33,32 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [startingKey, setStartingKey] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [topic, setTopic] = useState('');
+
+  const generate = useCallback(
+    async (mode: string, topic?: string) => {
+      const client = getSupabase();
+      if (!client || !user) return;
+      setGenerating(true);
+      setError(null);
+      try {
+        await requestLearningArtifact(client, user.id, courseId, 'simulation', {
+          mode,
+          topic,
+          difficulty: 'advanced',
+          nonce: mode === 'surprise' || mode === 'another' ? new Date().toISOString() : undefined,
+        });
+        setError(
+          'Simulation requested. Refresh after the worker validates it; built-in cases remain available now.'
+        );
+      } catch {
+        setError('Avidia could not queue a new simulation. Built-in simulations still work.');
+      }
+      setGenerating(false);
+    },
+    [courseId, user]
+  );
 
   const load = useCallback(async () => {
     const client = getSupabase();
@@ -42,7 +69,7 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
     try {
       const [c, caseRows, sessionRows] = await Promise.all([
         fetchOwnCourse(client, user.id, courseId),
-        listSimulationCases(client),
+        listSimulationCases(client, courseId),
         listOwnSimulationSessions(client, courseId),
       ]);
       setCourse(c);
@@ -109,6 +136,40 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
         deterministic — your actions, in your order, decide how it unfolds. Results feed the same
         mastery picture as your practice questions.
       </Text>
+      <View style={styles.card}>
+        <Text style={styles.title}>Generate a personalized simulation</Text>
+        <Text style={styles.tagline}>
+          AI authors a validated case once; M11 runs every action and outcome deterministically.
+        </Text>
+        <TextInput
+          accessibilityLabel="Simulation topic"
+          placeholder="Optional topic"
+          value={topic}
+          onChangeText={setTopic}
+          style={styles.input}
+        />
+        {(
+          [
+            ['recommended', 'Recommended for Me'],
+            ['upcoming_exam', 'Upcoming Exam'],
+            ['weakest', 'My Weakest Area'],
+            ['topic', 'Choose Topic'],
+            ['surprise', 'Surprise Me'],
+          ] as const
+        ).map(([mode, label]) => (
+          <SecondaryButton
+            key={mode}
+            label={label}
+            onPress={() => generate(mode, mode === 'topic' ? topic : undefined)}
+            disabled={generating}
+          />
+        ))}
+        <PrimaryButton
+          label="Generate New Simulation"
+          onPress={() => generate('recommended')}
+          busy={generating}
+        />
+      </View>
       {cases.length === 0 ? (
         <Text style={styles.muted}>
           No simulation cases are available yet. The case library is seeded with the app — check
@@ -148,6 +209,13 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
                 onPress={() => router.push(`/simulation/${completedRuns[0]!.id}/debrief`)}
               />
             ) : null}
+            {caseRow.owner_id ? (
+              <SecondaryButton
+                label="Another Simulation Like This"
+                onPress={() => generate('another', caseRow.title)}
+                disabled={generating}
+              />
+            ) : null}
           </View>
         );
       })}
@@ -172,4 +240,11 @@ const styles = StyleSheet.create({
   tagline: { color: colors.textMuted, fontSize: 14 },
   meta: { color: colors.textMuted, fontSize: 13 },
   resumeNote: { color: colors.primary, fontSize: 13 },
+  input: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: spacing(3),
+  },
 });

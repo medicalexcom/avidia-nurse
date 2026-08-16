@@ -79,7 +79,9 @@ export interface ExecuteAiTaskResult<T> {
   usedFallback: boolean;
 }
 
-export async function executeAiTask<T>(options: ExecuteAiTaskOptions<T>): Promise<ExecuteAiTaskResult<T>> {
+export async function executeAiTask<T>(
+  options: ExecuteAiTaskOptions<T>
+): Promise<ExecuteAiTaskResult<T>> {
   const {
     request,
     attempt,
@@ -89,7 +91,11 @@ export async function executeAiTask<T>(options: ExecuteAiTaskOptions<T>): Promis
   } = options;
 
   const route = routeAiTask(request, env);
-  const primaryChoice: AiModelChoice = { provider: route.provider, model: route.model, tier: route.tier };
+  const primaryChoice: AiModelChoice = {
+    provider: route.provider,
+    model: route.model,
+    tier: route.tier,
+  };
 
   const primary = await runAgainstModel({
     request,
@@ -152,7 +158,10 @@ async function runAgainstModel<T>(options: RunAgainstModelOptions<T>): Promise<R
         provider: choice.provider,
         model: choice.model,
         latencyMs,
-        tokens: outcome.usage && { input: outcome.usage.inputTokens, output: outcome.usage.outputTokens },
+        tokens: outcome.usage && {
+          input: outcome.usage.inputTokens,
+          output: outcome.usage.outputTokens,
+        },
         estimatedCostUsd: outcome.usage && estimateCostUsd(choice.model, outcome.usage),
         retryCount: attemptNumber - 1,
         usedFallback,

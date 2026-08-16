@@ -26,7 +26,10 @@ async function instantSleep(): Promise<void> {
 describe('executeAiTask — success paths', () => {
   it('returns the value on first attempt against the primary model, no retries, no fallback', async () => {
     const events = captureEvents();
-    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({ ok: true, value: 'concepts-json' }));
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: true,
+      value: 'concepts-json',
+    }));
 
     const result = await executeAiTask({
       request: { task: 'CONCEPT_EXTRACTION', complexity: 'MEDIUM' },
@@ -98,7 +101,12 @@ describe('executeAiTask — success paths', () => {
   it('a non-retryable failure (e.g. invalid_response) short-circuits to fallback without exhausting the attempt budget', async () => {
     const attempt = jest.fn(async (choice: AiModelChoice): Promise<AiAttemptOutcome<string>> => {
       if (choice.tier === 'ECONOMY') {
-        return { ok: false, reason: 'invalid_response', retryableSameModel: false, detail: 'schema mismatch' };
+        return {
+          ok: false,
+          reason: 'invalid_response',
+          retryableSameModel: false,
+          detail: 'schema mismatch',
+        };
       }
       return { ok: true, value: 'fallback-value' };
     });
@@ -112,14 +120,21 @@ describe('executeAiTask — success paths', () => {
 
     expect(result.usedFallback).toBe(true);
     // Exactly ONE attempt against the primary — retryableSameModel:false means "don't retry the same model".
-    const primaryAttempts = attempt.mock.calls.filter(([choice]: [AiModelChoice]) => choice.tier === 'ECONOMY');
+    const primaryAttempts = attempt.mock.calls.filter(
+      ([choice]: [AiModelChoice]) => choice.tier === 'ECONOMY'
+    );
     expect(primaryAttempts).toHaveLength(1);
   });
 
   it('quota_exceeded is never retried against the same model — it escalates to fallback immediately', async () => {
     const attempt = jest.fn(async (choice: AiModelChoice): Promise<AiAttemptOutcome<string>> => {
       if (choice.tier === 'ECONOMY') {
-        return { ok: false, reason: 'quota_exceeded', retryableSameModel: false, detail: 'billing quota exhausted' };
+        return {
+          ok: false,
+          reason: 'quota_exceeded',
+          retryableSameModel: false,
+          detail: 'billing quota exhausted',
+        };
       }
       return { ok: true, value: 'fallback-after-quota' };
     });
@@ -133,21 +148,21 @@ describe('executeAiTask — success paths', () => {
 
     expect(result.usedFallback).toBe(true);
     expect(result.value).toBe('fallback-after-quota');
-    const primaryAttempts = attempt.mock.calls.filter(([choice]: [AiModelChoice]) => choice.tier === 'ECONOMY');
+    const primaryAttempts = attempt.mock.calls.filter(
+      ([choice]: [AiModelChoice]) => choice.tier === 'ECONOMY'
+    );
     expect(primaryAttempts).toHaveLength(1);
   });
 });
 
 describe('executeAiTask — exhaustion / student-safe failure', () => {
   it('throws AiTaskFailedError with a generic, student-safe message when primary AND fallback both exhaust retries', async () => {
-    const attempt = jest.fn(
-      async (): Promise<AiAttemptOutcome<string>> => ({
-        ok: false,
-        reason: 'http_5xx',
-        retryableSameModel: true,
-        detail: 'upstream 503 from provider — internal only',
-      })
-    );
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: false,
+      reason: 'http_5xx',
+      retryableSameModel: true,
+      detail: 'upstream 503 from provider — internal only',
+    }));
 
     await expect(
       executeAiTask({
@@ -170,7 +185,9 @@ describe('executeAiTask — exhaustion / student-safe failure', () => {
       expect(error).toBeInstanceOf(AiTaskFailedError);
       const failed = error as AiTaskFailedError;
       // Student-safe: generic message only, no provider/model/status-code detail leaks into .message.
-      expect(failed.message).toBe('This AI task could not be completed right now. Please try again shortly.');
+      expect(failed.message).toBe(
+        'This AI task could not be completed right now. Please try again shortly.'
+      );
       expect(failed.message).not.toMatch(/503|provider|upstream/i);
       // The real reason is still available internally for ops/logs.
       expect(failed.detail).toMatch(/upstream 503 from provider/);
@@ -179,14 +196,12 @@ describe('executeAiTask — exhaustion / student-safe failure', () => {
   });
 
   it('throws AiTaskFailedError immediately (no fallback attempted) when the task has no fallback tier (e.g. DEEP_TUTORING, already ADVANCED)', async () => {
-    const attempt = jest.fn(
-      async (): Promise<AiAttemptOutcome<string>> => ({
-        ok: false,
-        reason: 'timeout',
-        retryableSameModel: true,
-        detail: 'timed out',
-      })
-    );
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: false,
+      reason: 'timeout',
+      retryableSameModel: true,
+      detail: 'timed out',
+    }));
 
     await expect(
       executeAiTask({
@@ -202,25 +217,29 @@ describe('executeAiTask — exhaustion / student-safe failure', () => {
   });
 
   it('throws AiTaskFailedError immediately when allowFallback is false, even though a fallback tier would otherwise exist', async () => {
-    const attempt = jest.fn(
-      async (_choice: AiModelChoice): Promise<AiAttemptOutcome<string>> => ({
-        ok: false,
-        reason: 'http_429',
-        retryableSameModel: true,
-        detail: 'rate limited',
-      })
-    );
+    const attempt = jest.fn(async (_choice: AiModelChoice): Promise<AiAttemptOutcome<string>> => ({
+      ok: false,
+      reason: 'http_429',
+      retryableSameModel: true,
+      detail: 'rate limited',
+    }));
 
     await expect(
       executeAiTask({
-        request: { task: 'CONCEPT_EXTRACTION', complexity: 'MEDIUM', requirements: { allowFallback: false } },
+        request: {
+          task: 'CONCEPT_EXTRACTION',
+          complexity: 'MEDIUM',
+          requirements: { allowFallback: false },
+        },
         attempt,
         env: ENV,
         sleep: instantSleep,
       })
     ).rejects.toThrow(AiTaskFailedError);
 
-    const tiersAttempted = new Set(attempt.mock.calls.map(([choice]: [AiModelChoice]) => choice.tier));
+    const tiersAttempted = new Set(
+      attempt.mock.calls.map(([choice]: [AiModelChoice]) => choice.tier)
+    );
     expect(tiersAttempted).toEqual(new Set(['ECONOMY']));
   });
 });
@@ -228,14 +247,12 @@ describe('executeAiTask — exhaustion / student-safe failure', () => {
 describe('executeAiTask — retry/backoff mechanics', () => {
   it('respects a custom maxAttemptsPerModel and sleeps between same-model retries with increasing backoff', async () => {
     const sleepCalls: number[] = [];
-    const attempt = jest.fn(
-      async (): Promise<AiAttemptOutcome<string>> => ({
-        ok: false,
-        reason: 'http_5xx',
-        retryableSameModel: true,
-        detail: 'server error',
-      })
-    );
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: false,
+      reason: 'http_5xx',
+      retryableSameModel: true,
+      detail: 'server error',
+    }));
 
     await expect(
       executeAiTask({
@@ -257,14 +274,12 @@ describe('executeAiTask — retry/backoff mechanics', () => {
 
   it('does not sleep after the final attempt (no wasted delay once the budget is exhausted)', async () => {
     let sleepCount = 0;
-    const attempt = jest.fn(
-      async (): Promise<AiAttemptOutcome<string>> => ({
-        ok: false,
-        reason: 'timeout',
-        retryableSameModel: true,
-        detail: 'timed out',
-      })
-    );
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: false,
+      reason: 'timeout',
+      retryableSameModel: true,
+      detail: 'timed out',
+    }));
 
     await expect(
       executeAiTask({
@@ -286,13 +301,11 @@ describe('executeAiTask — retry/backoff mechanics', () => {
 describe('executeAiTask — observability carries no course/prompt content', () => {
   it('every emitted event is limited to routing/outcome metadata fields', async () => {
     const events = captureEvents();
-    const attempt = jest.fn(
-      async (): Promise<AiAttemptOutcome<string>> => ({
-        ok: true,
-        value: 'a real course-content answer that must never appear in telemetry',
-        usage: { inputTokens: 1000, outputTokens: 200 },
-      })
-    );
+    const attempt = jest.fn(async (): Promise<AiAttemptOutcome<string>> => ({
+      ok: true,
+      value: 'a real course-content answer that must never appear in telemetry',
+      usage: { inputTokens: 1000, outputTokens: 200 },
+    }));
 
     await executeAiTask({
       request: { task: 'CONCEPT_EXTRACTION', complexity: 'MEDIUM' },

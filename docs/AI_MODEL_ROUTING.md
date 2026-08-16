@@ -18,9 +18,9 @@ one file, stop — add (or reuse) a task in `types.ts` instead.
 | Tier        | Default model            | Price (in/out per 1M tokens) | Used for                                       |
 | ----------- | ------------------------ | ---------------------------- | ---------------------------------------------- |
 | SPECIALIZED | `text-embedding-3-small` | $0.02 / —                    | Embeddings only (never on the chat ladder)     |
-| ECONOMY     | `gpt-5-mini`             | $0.25 / $2.00                | High-volume, structured, validated downstream  |
-| STANDARD    | `gpt-5.1`                | $1.25 / $10.00               | Retrieval-grounded answers, complex generation |
-| ADVANCED    | `gpt-5.2`                | $1.75 / $14.00               | Deep reasoning; never silently downgraded      |
+| ECONOMY     | `gpt-5.6-luna`           | $0.20 / $1.20                | High-volume, structured, validated downstream  |
+| STANDARD    | `gpt-5.6-terra`          | $2.00 / $12.00               | Retrieval-grounded answers, complex generation |
+| ADVANCED    | `gpt-5.6-sol`            | $5.00 / $30.00               | Deep reasoning; never silently downgraded      |
 
 These identifiers are code-verified defaults, not a claim of access by a
 particular account. Re-verify with `pnpm --filter @avidia/worker verify-models`
@@ -54,8 +54,8 @@ Routing decision only (no I/O):
 import { routeAiTask } from '@avidia/ai-router';
 
 const route = routeAiTask({ task: 'RAG_ANSWER', complexity: 'MEDIUM' });
-// { provider: 'openai', model: 'gpt-5.1', tier: 'STANDARD',
-//   fallback: { provider: 'openai', model: 'gpt-5.2', tier: 'ADVANCED' } }
+// { provider: 'openai', model: 'gpt-5.6-terra', tier: 'STANDARD',
+//   fallback: { provider: 'openai', model: 'gpt-5.6-sol', tier: 'ADVANCED' } }
 ```
 
 Routing + bounded retry + safe fallback + observability, for a new call site:
@@ -109,7 +109,7 @@ backend only. **Never** prefix any of these `EXPO_PUBLIC_` — that would ship
 them to the client bundle.
 
 | Variable                                                       | Default                  | Purpose                                                                                                       |
-| -------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| -------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `OPENAI_API_KEY`                                               | — (required)             | Provider credential                                                                                           |
 | `AI_PROVIDER`                                                  | `openai`                 | Selects the provider catalog                                                                                  |
 | `AI_MODEL_ECONOMY` / `AI_MODEL_STANDARD` / `AI_MODEL_ADVANCED` | tier defaults above      | Per-tier override, independent of each other                                                                  |

@@ -466,7 +466,14 @@ export async function processLearningRequest(
       ...routed,
       env,
       system:
-        'You are Ask Avidia, a course-aware nursing tutor. Answer from numbered course sources, state when evidence is insufficient, never invent citations, and return {"answer":"..."}. During active simulation discuss only explicitly supplied revealed state and never prescribe the exact next action.',
+        // OpenAI's json_object response_format rejects the request with a
+        // 400 unless the literal word "JSON" appears somewhere in the
+        // messages sent — this was the actual, previously-unlogged cause of
+        // every live Ask Avidia reply failing (both the primary and
+        // fallback model attempts hit this same 400, surfaced only as
+        // failureReason "other" before the improved error logging added
+        // here). Say so explicitly instead of only showing the shape.
+        'You are Ask Avidia, a course-aware nursing tutor. Answer from numbered course sources, state when evidence is insufficient, never invent citations, and respond with JSON of the form {"answer":"..."}. During active simulation discuss only explicitly supplied revealed state and never prescribe the exact next action.',
       user: `${base}\nBounded conversation:\n${context.history
         .slice(-MAX_HISTORY)
         .map((m) => `${m.role}: ${m.content}`)

@@ -25,9 +25,14 @@ const FIXED_TIER: Partial<Record<AiTask, Exclude<AiTier, 'SPECIALIZED'>>> = {
  * QUESTION_REPAIR's "same tier as what it's repairing"). EMBEDDING is
  * SPECIALIZED and is never resolved through this function — see router.ts.
  */
-export function baseTierForTask(task: AiTask, complexity: AiComplexity): Exclude<AiTier, 'SPECIALIZED'> {
+export function baseTierForTask(
+  task: AiTask,
+  complexity: AiComplexity
+): Exclude<AiTier, 'SPECIALIZED'> {
   if (task === 'EMBEDDING') {
-    throw new Error('EMBEDDING is a SPECIALIZED task; use resolveEmbeddingModel(), not baseTierForTask().');
+    throw new Error(
+      'EMBEDDING is a SPECIALIZED task; use resolveEmbeddingModel(), not baseTierForTask().'
+    );
   }
   const fixed = FIXED_TIER[task];
   if (fixed) {

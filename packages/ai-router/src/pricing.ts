@@ -2,8 +2,8 @@
  * Per-model pricing (USD per 1,000,000 tokens), for cost estimation in
  * observability only (spec section 8: "estimated cost where possible"). Not
  * used for routing decisions or billing — a best-effort estimate from
- * OpenAI's published pricing, verified alongside the model ids in
- * openai.ts on 2026-08-15.
+ * OpenAI's published standard API pricing. This metadata is operational
+ * telemetry only and should be reviewed whenever a model is changed.
  */
 export interface ModelPricing {
   inputPer1M: number;
@@ -11,9 +11,9 @@ export interface ModelPricing {
 }
 
 export const OPENAI_PRICING: Record<string, ModelPricing> = {
-  'gpt-5.6-luna': { inputPer1M: 0.2, outputPer1M: 1.2 },
-  'gpt-5.6-terra': { inputPer1M: 2.0, outputPer1M: 12.0 },
-  'gpt-5.6-sol': { inputPer1M: 5.0, outputPer1M: 30.0 },
+  'gpt-5-mini': { inputPer1M: 0.25, outputPer1M: 2.0 },
+  'gpt-5.1': { inputPer1M: 1.25, outputPer1M: 10.0 },
+  'gpt-5.2': { inputPer1M: 1.75, outputPer1M: 14.0 },
   // Embeddings have no separate output cost; OpenAI bills input tokens only.
   'text-embedding-3-small': { inputPer1M: 0.02, outputPer1M: 0 },
 };

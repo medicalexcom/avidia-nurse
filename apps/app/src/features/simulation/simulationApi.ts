@@ -27,6 +27,8 @@ export interface SimulationCaseRow {
   difficulty: string;
   scenario_type: string;
   estimated_duration_minutes: number;
+  owner_id: string | null;
+  course_id: string | null;
 }
 
 /** Owner-visible session row (state/score stay server-side, spec N). */
@@ -121,14 +123,18 @@ export interface SimulationDebrief {
 }
 
 /** List the active seeded case library (metadata only, spec AF). */
-export async function listSimulationCases(client: SupabaseClient): Promise<SimulationCaseRow[]> {
-  const { data, error } = await client
+export async function listSimulationCases(
+  client: SupabaseClient,
+  courseId?: string
+): Promise<SimulationCaseRow[]> {
+  let query = client
     .from('simulation_cases')
     .select(
-      'id, case_key, case_version, engine_version, status, title, description, difficulty, scenario_type, estimated_duration_minutes'
+      'id, case_key, case_version, engine_version, status, title, description, difficulty, scenario_type, estimated_duration_minutes, owner_id, course_id'
     )
-    .eq('status', 'active')
-    .order('case_key');
+    .eq('status', 'active');
+  if (courseId) query = query.or(`owner_id.is.null,course_id.eq.${courseId}`);
+  const { data, error } = await query.order('case_key');
   if (error) throw error;
   return (data ?? []) as SimulationCaseRow[];
 }
@@ -195,6 +201,20 @@ export async function getSimulationView(
   });
   if (error) throw error;
   return data as SimulationViewResult;
+}
+
+/** Owner/course context for safe navigation into Ask Avidia. */
+export async function getSimulationCourseId(
+  client: SupabaseClient,
+  sessionId: string
+): Promise<string> {
+  const { data, error } = await client
+    .from('simulation_sessions')
+    .select('course_id')
+    .eq('id', sessionId)
+    .single();
+  if (error) throw error;
+  return String(data.course_id);
 }
 
 /** Abandon an active session (spec V): no score, no mastery evidence. */

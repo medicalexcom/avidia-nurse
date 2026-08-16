@@ -18,15 +18,11 @@ generation meant hunting through call sites instead of changing one file;
 and there was no shared observability format, so cost/latency/failure data
 for one task told you nothing comparable about another.
 
-Separately, the specific model ids in use (GPT-5, GPT-5 mini, GPT-5.1) were
-assumed current but had not been re-verified against OpenAI's actual,
-present-day model catalog — a real risk given the gap between this
-project's original planning and today. Official documentation
-(`developers.openai.com/api/docs/models` and the per-model pages, checked
-2026-08-15) shows GPT-5 / GPT-5 mini / GPT-5.1 no longer appear in the
-current lineup; the current three-tier chat family is GPT-5.6
-(`gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`). `text-embedding-3-small`
-remains current and unchanged.
+Separately, model identifiers must not be invented from product-family names
+or treated as globally available. The defaults are real API identifiers and
+the verification command checks them against the configured account before
+deployment. `text-embedding-3-small` remains pinned because changing it would
+make existing stored vectors incomparable.
 
 Explicit constraints for this change: it must not modify M8 (`packages/mastery`)
 mastery-calculation logic or M11's (`packages/simulation`) deterministic

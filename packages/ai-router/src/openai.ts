@@ -6,31 +6,15 @@ import { AiTier } from './types';
  * other call site asks the router for a TASK's model; nobody else needs to
  * know these strings.
  *
- * Verified live against OpenAI's official model documentation
- * (platform.openai.com/docs/models, developers.openai.com/api/docs/models,
- * and the embeddings guide) on 2026-08-15 — NOT carried forward from M7's
- * original defaults, per this task's explicit instruction not to assume
- * historical models are still current. GPT-5 / GPT-5 mini / GPT-5.1, which
- * were current at earlier points, do not appear in the current model
- * catalog or comparison page; the GPT-5.6 family (sol / terra / luna) is the
- * current three-tier lineup and is what these tiers resolve to. Re-verify
- * this file (and re-run `pnpm --filter @avidia/worker verify-models`, which
- * checks these ids against the configured OpenAI account) whenever OpenAI
- * ships a new model generation — see docs/AI_MODEL_ROUTING.md.
- *
- *   gpt-5.6-luna  $0.20 / $1.20   per 1M input/output tokens — "cost-sensitive,
- *                 high-volume workloads" (nano-equivalent)
- *   gpt-5.6-terra $2.00 / $12.00  per 1M input/output tokens — "balances
- *                 intelligence and cost" (mini-equivalent)
- *   gpt-5.6-sol   $5.00 / $30.00  per 1M input/output tokens — "frontier
- *                 model for complex professional work"
- * All three: 1,050,000 token context window, 128,000 max output tokens,
- * strict JSON-schema structured outputs supported.
+ * These are real OpenAI API identifiers rather than product-family names.
+ * Live availability is account-specific and MUST be checked with
+ * `pnpm --filter @avidia/worker verify-models` before deploying. Environment
+ * overrides make it possible to pin another model without a code change.
  */
 export const OPENAI_CHAT_MODELS: Record<Exclude<AiTier, 'SPECIALIZED'>, string> = {
-  ECONOMY: 'gpt-5.6-luna',
-  STANDARD: 'gpt-5.6-terra',
-  ADVANCED: 'gpt-5.6-sol',
+  ECONOMY: 'gpt-5-mini',
+  STANDARD: 'gpt-5.1',
+  ADVANCED: 'gpt-5.2',
 };
 
 /**

@@ -39,7 +39,9 @@ async function main(): Promise<void> {
   let failures = 0;
   for (const modelId of allOpenAiModelIds()) {
     const ok = availableIds.has(modelId);
-    console.log(`${ok ? 'PASS' : 'FAIL'}  ${modelId}${ok ? '' : ' — not available on this account'}`);
+    console.log(
+      `${ok ? 'PASS' : 'FAIL'}  ${modelId}${ok ? '' : ' — not available on this account'}`
+    );
     if (!ok) failures += 1;
   }
 
@@ -52,10 +54,14 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log(`\nAll ${allOpenAiModelIds().length} router model id(s) are available on the configured account.`);
+  console.log(
+    `\nAll ${allOpenAiModelIds().length} router model id(s) are available on the configured account.`
+  );
 }
 
 main().catch((error) => {
-  console.log(`FAIL  verify-models crashed: ${error instanceof Error ? error.message : String(error)}`);
+  console.log(
+    `FAIL  verify-models crashed: ${error instanceof Error ? error.message : String(error)}`
+  );
   process.exitCode = 1;
 });

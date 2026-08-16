@@ -63,3 +63,7 @@ Free tier has NO backups. Before real users: production on a backed-up plan, the
 ## Secret rotation
 
 If any credential leaks: rotate at the provider first (Supabase service key, Stripe key/webhook secret, AI keys), update `supabase secrets set` / worker host / CI secrets, then verify health + one webhook round-trip. History rewriting is not a substitute.
+
+## Personalized learning / Ask Avidia incidents
+
+Requests are rows in `ai_learning_requests`. `queued` waits for the worker; `processing` is being authored; `ready` points to a stored artifact/message; `failed` contains student-safe copy. Provider logs contain request ids and routing telemetry, never prompts or course text. Keep the worker running continuously for interactive tutor latency; the scheduled workflow is a fallback, not an ideal chat transport. Stored artifacts and built-in simulations remain available during an outage.

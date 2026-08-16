@@ -1,21 +1,29 @@
-# Known Limitations (v1, as of M15)
+# Known Limitations (post-M15 audit, 2026-08-16)
 
 Honest inventory of what Avidia Nurse v1 does NOT do, with severity.
 Nothing here is hidden behind marketing language. P-levels follow the
-M15 QA scale (P0 critical … P3 polish). There are **no open P0 or P1
-code defects**; the items below are limitations and configuration gaps.
+M15 QA scale (P0 critical … P3 polish). The items below include required
+founder-use capabilities that are absent; the earlier M15 conclusion did not
+cover the later dynamic-generation requirements.
 
-## Requires founder action before any real use
+## Requires live verification before real use
 
-- **No Supabase project exists yet** — every server-dependent feature is
-  unverified against live infrastructure until the founder provisions
-  development/staging (see `docs/ENVIRONMENTS.md`). The 71-section authz
-  harness and the manual journeys (M14/M15 checklists) run then.
-- **No AI provider keys configured** — document processing and question
-  generation need `OPENAI_API_KEY` on the worker.
+- Supabase/OpenAI configuration may exist in the deployment environment, but
+  repository source cannot prove secret values, migration state, or provider
+  access. Apply migrations through `0018`, run the authz harness and model
+  verification workflow, then complete the founder journey.
 - **Seed content not authored** — playbook target of 100–300 RN-reviewed
   questions and ~10 clinical cases for beta is editorial work, not code.
   One synthetic simulation case ships (migration 0012).
+
+## Current limitations
+
+- Personalized generation and Ask Avidia require a continuously running worker for responsive use; the 15-minute scheduled GitHub workflow is only a fallback.
+- Live provider/model access and the new RLS policies require founder-environment acceptance testing.
+- Current question-bank background generation remains ECONOMY; its defined complex-question route is not yet selected automatically.
+- Generated case-study questions currently provide unscored in-case feedback;
+  they do not yet create M7 attempts or M8 mastery evidence. Scored “Quiz me”
+  requests deliberately hand off to the existing adaptive practice flow.
 
 ## Product limitations (accepted for v1 beta)
 

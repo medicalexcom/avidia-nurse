@@ -268,7 +268,11 @@ describe('OpenAIConceptExtractionProvider', () => {
       await expect(provider.extract(chunks)).rejects.toThrow(ConceptExtractionFailedError);
 
       expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ task: 'CONCEPT_EXTRACTION', success: false, failureReason: '401' });
+      expect(events[0]).toMatchObject({
+        task: 'CONCEPT_EXTRACTION',
+        success: false,
+        failureReason: '401',
+      });
     });
   });
 });
@@ -306,6 +310,14 @@ describe('createConceptExtractionProviderFromEnv', () => {
       CONCEPT_MODEL: 'gpt-4o',
     });
     expect(provider.metadata().model).toBe('gpt-4o');
+  });
+
+  it('honors the central ECONOMY tier override', () => {
+    const provider = createConceptExtractionProviderFromEnv({
+      OPENAI_API_KEY: 'k',
+      AI_MODEL_ECONOMY: 'account-economy-model',
+    });
+    expect(provider.metadata().model).toBe('account-economy-model');
   });
 
   it('supports the scripted development provider', () => {

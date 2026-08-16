@@ -40,13 +40,21 @@ describe('routeAiTask — fixed-tier tasks', () => {
 
 describe('routeAiTask — CASE_STUDY_GENERATION (complexity-sensitive)', () => {
   it('routes LOW/MEDIUM to STANDARD and HIGH to ADVANCED', () => {
-    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'LOW' }, ENV).tier).toBe('STANDARD');
-    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'MEDIUM' }, ENV).tier).toBe('STANDARD');
-    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'HIGH' }, ENV).tier).toBe('ADVANCED');
+    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'LOW' }, ENV).tier).toBe(
+      'STANDARD'
+    );
+    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'MEDIUM' }, ENV).tier).toBe(
+      'STANDARD'
+    );
+    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'HIGH' }, ENV).tier).toBe(
+      'ADVANCED'
+    );
   });
 
   it('HIGH complexity (already ADVANCED) has no fallback', () => {
-    expect(routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'HIGH' }, ENV).fallback).toBeNull();
+    expect(
+      routeAiTask({ task: 'CASE_STUDY_GENERATION', complexity: 'HIGH' }, ENV).fallback
+    ).toBeNull();
   });
 });
 
@@ -68,7 +76,11 @@ describe('routeAiTask — QUESTION_REPAIR ("same tier, escalate only if necessar
   it('never lowers tier when minTier is below the computed tier', () => {
     // QUESTION_GENERATION_COMPLEX is already STANDARD; a lower minTier must not downgrade it.
     const result = routeAiTask(
-      { task: 'QUESTION_GENERATION_COMPLEX', complexity: 'MEDIUM', requirements: { minTier: 'ECONOMY' } },
+      {
+        task: 'QUESTION_GENERATION_COMPLEX',
+        complexity: 'MEDIUM',
+        requirements: { minTier: 'ECONOMY' },
+      },
       ENV
     );
     expect(result.tier).toBe('STANDARD');
@@ -77,7 +89,11 @@ describe('routeAiTask — QUESTION_REPAIR ("same tier, escalate only if necessar
 
 describe('routeAiTask — fallback never downgrades', () => {
   it('ADVANCED tasks have no fallback at all (nothing above ADVANCED)', () => {
-    for (const task of ['DEEP_TUTORING', 'CLINICAL_REASONING_EVALUATION', 'SIMULATION_CASE_GENERATION'] as const) {
+    for (const task of [
+      'DEEP_TUTORING',
+      'CLINICAL_REASONING_EVALUATION',
+      'SIMULATION_CASE_GENERATION',
+    ] as const) {
       expect(routeAiTask({ task, complexity: 'HIGH' }, ENV).fallback).toBeNull();
     }
   });
@@ -94,27 +110,29 @@ describe('routeAiTask — fallback never downgrades', () => {
 describe('resolveProviderCatalog — env overrides and compatibility', () => {
   it('uses openai defaults with no env', () => {
     const catalog = resolveProviderCatalog({});
-    expect(catalog.chatModels.ECONOMY).toBe('gpt-5.6-luna');
-    expect(catalog.chatModels.STANDARD).toBe('gpt-5.6-terra');
-    expect(catalog.chatModels.ADVANCED).toBe('gpt-5.6-sol');
+    expect(catalog.chatModels.ECONOMY).toBe('gpt-5-mini');
+    expect(catalog.chatModels.STANDARD).toBe('gpt-5.1');
+    expect(catalog.chatModels.ADVANCED).toBe('gpt-5.2');
     expect(catalog.embeddingModel).toBe('text-embedding-3-small');
   });
 
   it('honors per-tier AI_MODEL_* overrides independently', () => {
-    const catalog = resolveProviderCatalog({ AI_MODEL_ECONOMY: 'gpt-5.6-luna-preview' });
-    expect(catalog.chatModels.ECONOMY).toBe('gpt-5.6-luna-preview');
-    expect(catalog.chatModels.STANDARD).toBe('gpt-5.6-terra'); // untouched
+    const catalog = resolveProviderCatalog({ AI_MODEL_ECONOMY: 'gpt-5-mini-preview' });
+    expect(catalog.chatModels.ECONOMY).toBe('gpt-5-mini-preview');
+    expect(catalog.chatModels.STANDARD).toBe('gpt-5.1'); // untouched
   });
 
   it('routeAiTask picks up an AI_MODEL_* override', () => {
     const result = routeAiTask(
       { task: 'CONCEPT_EXTRACTION', complexity: 'MEDIUM' },
-      { AI_MODEL_ECONOMY: 'gpt-5.6-luna-preview' }
+      { AI_MODEL_ECONOMY: 'gpt-5-mini-preview' }
     );
-    expect(result.model).toBe('gpt-5.6-luna-preview');
+    expect(result.model).toBe('gpt-5-mini-preview');
   });
 
   it('throws AiRouterConfigError for an unknown AI_PROVIDER', () => {
-    expect(() => resolveProviderCatalog({ AI_PROVIDER: 'not-a-real-provider' })).toThrow(AiRouterConfigError);
+    expect(() => resolveProviderCatalog({ AI_PROVIDER: 'not-a-real-provider' })).toThrow(
+      AiRouterConfigError
+    );
   });
 });

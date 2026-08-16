@@ -514,7 +514,16 @@ export function createSupabaseLearningGenerationClient(
     async claim() {
       const { data, error } = await supabase.rpc('claim_ai_learning_request');
       if (error) throw error;
-      return (data as LearningRequestRow | null) ?? null;
+      // PostgREST returns a single-composite RPC's SQL NULL as an object
+      // with every column present but null (not a JSON null), because
+      // `select * from claim_ai_learning_request()` yields exactly one row
+      // even when the plpgsql body does `return null`. `?? null` only
+      // catches a true null/undefined, so an empty queue was silently
+      // treated as a real (all-null) claimed row — crashing downstream on
+      // `row.request.conversationId` and then failing again trying to
+      // fail(null). Guard on `id` actually being present instead.
+      const row = data as LearningRequestRow | null;
+      return row && row.id ? row : null;
     },
     async loadContext(row) {
       const [{ data: course }, { data: concepts }, { data: mastery }, { data: exams }] =

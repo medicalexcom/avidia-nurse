@@ -308,8 +308,16 @@ export async function processLearningRequest(
       (selected.map((c) => c.name).join(' ') || String(row.request.message ?? context.courseTitle));
     void embeddings; // retrieval implementation owns query embedding; retained as an explicit server-only dependency.
     const sources = await client.search(row.course_id, query);
-    if (!sources.length) throw new Error('no grounded course sources');
-    const base = `Course: ${context.courseTitle}\nTarget mode: ${mode}${context.upcomingExam ? `\nUpcoming exam: ${context.upcomingExam}` : ''}\nSelected structured concepts: ${selected.map((c) => c.name).join(', ')}\n${context.explicitContext}\nSources:\n${sourcePrompt(sources)}`;
+    // case_study/simulation authoring must stay course-grounded (unchanged
+    // behavior). Ask Avidia tutor replies must NOT hard-fail just because a
+    // question falls outside the uploaded course material — that produced a
+    // silent, permanent failure with no assistant message ever appearing.
+    // Fall back to clearly-labeled general nursing knowledge instead.
+    if (!sources.length && row.kind !== 'tutor') throw new Error('no grounded course sources');
+    const groundingNote = sources.length
+      ? ''
+      : "\nNo matching course sources were found for this question. Answer from general nursing knowledge only, and say plainly that this is not grounded in the student's uploaded course material.";
+    const base = `Course: ${context.courseTitle}\nTarget mode: ${mode}${context.upcomingExam ? `\nUpcoming exam: ${context.upcomingExam}` : ''}\nSelected structured concepts: ${selected.map((c) => c.name).join(', ')}\n${context.explicitContext}${groundingNote}\nSources:\n${sourcePrompt(sources)}`;
 
     if (row.kind === 'case_study') {
       const complexity: AiComplexity =
@@ -458,9 +466,12 @@ export async function processLearningRequest(
           ? { ok: true, value: v as { answer: string } }
           : { ok: false, errors: ['answer is required'] },
     });
+    const content = sources.length
+      ? answer.value.answer
+      : `${answer.value.answer}\n\n(This answer draws on general nursing knowledge — no matching source was found in your uploaded course material.)`;
     const result = await client.storeTutor({
       row,
-      content: answer.value.answer,
+      content,
       sources,
       task: routed.task,
       tier: answer.choice.tier,

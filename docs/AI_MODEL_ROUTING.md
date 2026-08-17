@@ -109,7 +109,7 @@ backend only. **Never** prefix any of these `EXPO_PUBLIC_` — that would ship
 them to the client bundle.
 
 | Variable                                                       | Default                  | Purpose                                                                                                       |
-| -------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| -------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`                                               | — (required)             | Provider credential                                                                                           |
 | `AI_PROVIDER`                                                  | `openai`                 | Selects the provider catalog                                                                                  |
 | `AI_MODEL_ECONOMY` / `AI_MODEL_STANDARD` / `AI_MODEL_ADVANCED` | tier defaults above      | Per-tier override, independent of each other                                                                  |

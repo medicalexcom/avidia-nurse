@@ -25,6 +25,28 @@ const TIMEOUT_MESSAGE =
   'This is taking longer than expected. Avidia is still working on it in the background — tap Refresh answer in a bit.';
 const FAILURE_FALLBACK_MESSAGE = "Avidia couldn't generate a response right now. Try again.";
 
+// Unobtrusive per-answer provenance badge. The grounding mode is computed
+// deterministically by the worker (never derived from the model's own
+// claim, and never merely from "N chunks were retrieved" — that is the bug
+// this replaces: a refusal used to still display "Grounded in 8 course
+// sources" because retrieval had returned 8 chunks that were never actually
+// relevant to the question).
+function groundingLabel(m: TutorMessage): string {
+  const count = m.source_chunk_ids.length;
+  const sourceNoun = `${count} course source${count === 1 ? '' : 's'}`;
+  if (m.grounding === 'course_grounded') return `Grounded in ${sourceNoun}.`;
+  if (m.grounding === 'mixed')
+    return count
+      ? `Partly grounded in ${sourceNoun}, partly general nursing/medical knowledge.`
+      : 'Partly general nursing/medical knowledge.';
+  if (m.grounding === 'general_knowledge')
+    return 'Not grounded in your course material — general nursing/medical knowledge.';
+  // Rows written before the grounding column existed carry no mode; fall
+  // back to the previous (less precise) source-count heuristic rather than
+  // showing nothing.
+  return count ? `Grounded in ${sourceNoun}.` : '';
+}
+
 // A stable reference for the no-context case. `context = {}` as a default
 // parameter would create a NEW object every render; since `context` is a
 // dependency of `load` below, that new reference retriggered the load
@@ -203,12 +225,7 @@ export function AskAvidiaScreen({
         >
           <Text style={styles.role}>{m.role === 'assistant' ? 'Avidia' : 'You'}</Text>
           <Text style={styles.body}>{m.content}</Text>
-          {m.source_chunk_ids.length ? (
-            <Text style={styles.source}>
-              Grounded in {m.source_chunk_ids.length} course source
-              {m.source_chunk_ids.length === 1 ? '' : 's'}.
-            </Text>
-          ) : null}
+          {m.role === 'assistant' ? <Text style={styles.source}>{groundingLabel(m)}</Text> : null}
           {m.task === 'QUESTION_GENERATION_ROUTINE' ? (
             <SecondaryButton
               label="Start a scored adaptive quiz"

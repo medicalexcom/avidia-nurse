@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
@@ -15,7 +15,18 @@ import {
   type SimulationCaseRow,
   type SimulationSessionRow,
 } from '../simulationApi';
-import { requestLearningArtifact } from '../../aiLearning/aiLearningApi';
+import {
+  listLearningRequests,
+  requestLearningArtifact,
+  type LearningRequest,
+} from '../../aiLearning/aiLearningApi';
+
+// Generation is asynchronous background work (a background worker validates
+// the AI-authored case before it becomes runnable). Poll for completion
+// instead of requiring a manual refresh, so "Creating simulation…" resolves
+// on its own to either a ready case or a clear failure message.
+const POLL_INTERVAL_MS = 4000;
+const POLL_TIMEOUT_MS = 120000;
 
 /**
  * Simulation case library — M11 (spec AE/AF/X).
@@ -35,30 +46,26 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
   const [startingKey, setStartingKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [topic, setTopic] = useState('');
+  // Simulation-kind ai_learning_requests still queued or being processed —
+  // rendered as "Creating simulation…" cards (spec: the library must
+  // surface generation status on a normal refresh, no hidden dev action).
+  const [pendingRequests, setPendingRequests] = useState<LearningRequest[]>([]);
+  // The most recent failed request, shown until the student dismisses it or
+  // starts a new generation — so a stale failure doesn't linger forever,
+  // but also isn't silently lost on the next screen focus.
+  const [failedRequest, setFailedRequest] = useState<LearningRequest | null>(null);
+  const [dismissedFailedId, setDismissedFailedId] = useState<string | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollToken = useRef(0);
 
-  const generate = useCallback(
-    async (mode: string, topic?: string) => {
-      const client = getSupabase();
-      if (!client || !user) return;
-      setGenerating(true);
-      setError(null);
-      try {
-        await requestLearningArtifact(client, user.id, courseId, 'simulation', {
-          mode,
-          topic,
-          difficulty: 'advanced',
-          nonce: mode === 'surprise' || mode === 'another' ? new Date().toISOString() : undefined,
-        });
-        setError(
-          'Simulation requested. Refresh after the worker validates it; built-in cases remain available now.'
-        );
-      } catch {
-        setError('Avidia could not queue a new simulation. Built-in simulations still work.');
-      }
-      setGenerating(false);
-    },
-    [courseId, user]
-  );
+  const stopPolling = useCallback(() => {
+    pollToken.current += 1;
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+  useEffect(() => stopPolling, [stopPolling]);
 
   const load = useCallback(async () => {
     const client = getSupabase();
@@ -67,20 +74,75 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
       return;
     }
     try {
-      const [c, caseRows, sessionRows] = await Promise.all([
+      const [c, caseRows, sessionRows, requests] = await Promise.all([
         fetchOwnCourse(client, user.id, courseId),
         listSimulationCases(client, courseId),
         listOwnSimulationSessions(client, courseId),
+        listLearningRequests(client, courseId, 'simulation'),
       ]);
       setCourse(c);
       setCases(caseRows);
       setSessions(sessionRows);
+      setPendingRequests(
+        requests.filter((r) => r.status === 'queued' || r.status === 'processing')
+      );
+      const latestFailed = requests.find((r) => r.status === 'failed');
+      setFailedRequest(latestFailed ?? null);
       setError(c ? null : 'This course could not be found.');
     } catch {
       setError('We could not load the simulation library. Please try again.');
     }
     setLoading(false);
   }, [user, courseId]);
+
+  // While any simulation request is still queued/processing, keep polling
+  // and reloading so a case that finishes moves itself from "Creating…" to
+  // "Start" without the student having to do anything.
+  const pollUntilSettled = useCallback(() => {
+    stopPolling();
+    const token = pollToken.current;
+    const startedAt = Date.now();
+    const tick = async () => {
+      if (token !== pollToken.current) return;
+      await load();
+      if (token !== pollToken.current) return;
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) return;
+      pollTimer.current = setTimeout(tick, POLL_INTERVAL_MS);
+    };
+    pollTimer.current = setTimeout(tick, POLL_INTERVAL_MS);
+  }, [load, stopPolling]);
+
+  useEffect(() => {
+    if (pendingRequests.length > 0) pollUntilSettled();
+    else stopPolling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRequests.length]);
+
+  const generate = useCallback(
+    async (mode: string, topic?: string) => {
+      const client = getSupabase();
+      if (!client || !user) return;
+      setGenerating(true);
+      setError(null);
+      try {
+        const request = await requestLearningArtifact(client, user.id, courseId, 'simulation', {
+          mode,
+          topic,
+          difficulty: 'advanced',
+          nonce: mode === 'surprise' || mode === 'another' ? new Date().toISOString() : undefined,
+        });
+        if (request.status === 'queued' || request.status === 'processing') {
+          setPendingRequests((prev) => [request, ...prev.filter((r) => r.id !== request.id)]);
+        } else {
+          await load();
+        }
+      } catch {
+        setError('Avidia could not queue a new simulation. Built-in simulations still work.');
+      }
+      setGenerating(false);
+    },
+    [courseId, load, user]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -170,7 +232,23 @@ export function SimulationLibraryScreen({ courseId }: { courseId: string }) {
           busy={generating}
         />
       </View>
-      {cases.length === 0 ? (
+      {pendingRequests.map((request) => (
+        <View key={request.id} style={styles.card}>
+          <Text style={styles.title}>Creating simulation…</Text>
+          <Text style={styles.tagline}>
+            Avidia is authoring and validating this case. It will appear below automatically — no
+            need to refresh.
+          </Text>
+        </View>
+      ))}
+      {failedRequest && dismissedFailedId !== failedRequest.id ? (
+        <View style={styles.card}>
+          <Text style={styles.title}>Simulation couldn&apos;t be created</Text>
+          <Text style={styles.tagline}>Try again, or choose a different topic.</Text>
+          <SecondaryButton label="Dismiss" onPress={() => setDismissedFailedId(failedRequest.id)} />
+        </View>
+      ) : null}
+      {cases.length === 0 && pendingRequests.length === 0 ? (
         <Text style={styles.muted}>
           No simulation cases are available yet. The case library is seeded with the app — check
           back after your next update.

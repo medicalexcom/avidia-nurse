@@ -18,9 +18,9 @@ import {
 
 // Ask Avidia is processed asynchronously by the background worker (spec J).
 // Poll for the reply instead of requiring a manual "Refresh answer" tap;
-// bounded so an unresponsive request can't poll forever.
+// bounded to stay above the worker's 5-minute cron cadence (.github/workflows/worker.yml) so a request queued right after a run starts doesn't time out before the next run even starts.
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 90000;
+const POLL_TIMEOUT_MS = 360000;
 const TIMEOUT_MESSAGE =
   'This is taking longer than expected. Avidia is still working on it in the background — tap Refresh answer in a bit.';
 const FAILURE_FALLBACK_MESSAGE = "Avidia couldn't generate a response right now. Try again.";

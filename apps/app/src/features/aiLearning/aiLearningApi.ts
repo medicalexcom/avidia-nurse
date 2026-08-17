@@ -61,11 +61,20 @@ export interface TutorConversation {
   context: Record<string, unknown>;
 }
 
+export type GroundingMode = 'course_grounded' | 'mixed' | 'general_knowledge';
+
 export interface TutorMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   source_chunk_ids: string[];
+  /**
+   * Deterministic provenance mode computed by the worker (never inferred
+   * from source_chunk_ids.length, which used to always show "Grounded in N
+   * sources" even when none of the retrieved chunks were actually
+   * relevant). Null on rows written before this column existed.
+   */
+  grounding: GroundingMode | null;
   task: string | null;
   model_tier: string | null;
   created_at: string;
@@ -100,7 +109,7 @@ export async function listTutorMessages(
 ): Promise<TutorMessage[]> {
   const { data, error } = await client
     .from('tutor_messages')
-    .select('id,role,content,source_chunk_ids,task,model_tier,created_at')
+    .select('id,role,content,source_chunk_ids,grounding,task,model_tier,created_at')
     .eq('conversation_id', conversationId)
     .order('created_at');
   if (error) throw error;

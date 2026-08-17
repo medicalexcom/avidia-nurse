@@ -49,6 +49,7 @@ const assistantMessage = {
   role: 'assistant' as const,
   content: 'HIV is classified as AIDS once CD4 count falls below 200 cells/mm3.',
   source_chunk_ids: ['chunk-1'],
+  grounding: 'course_grounded' as const,
   task: 'RAG_ANSWER',
   model_tier: 'STANDARD',
   created_at: '2026-08-16T00:00:05.000Z',
@@ -178,5 +179,45 @@ describe('AskAvidiaScreen', () => {
       'Why was I wrong?',
       expect.objectContaining({ questionId: 'question-1' })
     );
+  });
+
+  describe('provenance badge (spec: "Retrieved ≠ supporting" — never derived from source count alone)', () => {
+    const base = {
+      id: 'm-a',
+      role: 'assistant' as const,
+      content: 'An answer.',
+      task: 'RAG_ANSWER',
+      model_tier: 'STANDARD',
+      created_at: '2026-08-16T00:00:05.000Z',
+    };
+
+    it('shows the course-grounded badge only when the mode is actually course_grounded', async () => {
+      mocked(aiLearningApi.listTutorMessages).mockResolvedValue([
+        { ...base, source_chunk_ids: ['c1'], grounding: 'course_grounded' },
+      ]);
+      await render(<AskAvidiaScreen courseId="course-1" />);
+      await screen.findByText('Grounded in 1 course source.');
+    });
+
+    it('never shows "Grounded" when the mode is general_knowledge, even if chunks were retrieved for other bookkeeping', async () => {
+      mocked(aiLearningApi.listTutorMessages).mockResolvedValue([
+        { ...base, source_chunk_ids: [], grounding: 'general_knowledge' },
+      ]);
+      await render(<AskAvidiaScreen courseId="course-1" />);
+      await screen.findByText(
+        'Not grounded in your course material — general nursing/medical knowledge.'
+      );
+      expect(screen.queryByText(/Grounded in \d+ course source/)).toBeNull();
+    });
+
+    it('labels a mixed answer distinctly from fully course-grounded or fully general', async () => {
+      mocked(aiLearningApi.listTutorMessages).mockResolvedValue([
+        { ...base, source_chunk_ids: ['c1'], grounding: 'mixed' },
+      ]);
+      await render(<AskAvidiaScreen courseId="course-1" />);
+      await screen.findByText(
+        'Partly grounded in 1 course source, partly general nursing/medical knowledge.'
+      );
+    });
   });
 });

@@ -24,9 +24,9 @@ import {
 // Generation is asynchronous background work (a background worker validates
 // the AI-authored case before it becomes runnable). Poll for completion
 // instead of requiring a manual refresh, so "Creating simulation…" resolves
-// on its own to either a ready case or a clear failure message.
+// on its own to either a ready case or a clear failure message. Timeout is kept above the worker's 5-minute cron cadence (.github/workflows/worker.yml) plus generation time.
 const POLL_INTERVAL_MS = 4000;
-const POLL_TIMEOUT_MS = 120000;
+const POLL_TIMEOUT_MS = 420000;
 
 /**
  * Simulation case library — M11 (spec AE/AF/X).

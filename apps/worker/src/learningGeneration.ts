@@ -21,7 +21,8 @@ const SAFE_FAILURE =
   'Avidia could not create that right now. Your stored study tools still work; please try again.';
 const MAX_HISTORY = 10;
 const MAX_SOURCES = 8;
-const openAiTimeoutMs = (task: AiTask): number => (task === 'SIMULATION_CASE_GENERATION' || task === 'CASE_STUDY_GENERATION' ? 240_000 : 90_000); // Both return much larger structured JSON than a tutor answer; SIMULATION_CASE_GENERATION timed out on all 3 attempts at ~90s each in live worker run #254 (2026-08-18), so both get a longer ceiling.
+const openAiTimeoutMs = (task: AiTask): number =>
+  task === 'SIMULATION_CASE_GENERATION' || task === 'CASE_STUDY_GENERATION' ? 240_000 : 90_000; // Both return much larger structured JSON than a tutor answer; SIMULATION_CASE_GENERATION timed out on all 3 attempts at ~90s each in live worker run #254 (2026-08-18), so both get a longer ceiling.
 
 // A retrieved chunk counts as genuinely SUPPORTING an answer only above this
 // cosine-similarity floor. search_course_chunks() is called with

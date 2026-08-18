@@ -68,7 +68,7 @@ export interface RawGeneration {
 export type GenerationSchemaResult =
   { ok: true; value: RawGeneration } | { ok: false; errors: string[] };
 
-export const MAX_QUESTIONS_PER_BATCH = 20;
+export const MAX_QUESTIONS_PER_BATCH = 30;
 export const MAX_OPTIONS_PER_QUESTION = 6;
 export const MIN_STEM_LENGTH = 20;
 export const MAX_STEM_LENGTH = 3000;

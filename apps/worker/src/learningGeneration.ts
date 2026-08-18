@@ -21,6 +21,7 @@ const SAFE_FAILURE =
   'Avidia could not create that right now. Your stored study tools still work; please try again.';
 const MAX_HISTORY = 10;
 const MAX_SOURCES = 8;
+const openAiTimeoutMs = (task: AiTask): number => (task === 'SIMULATION_CASE_GENERATION' || task === 'CASE_STUDY_GENERATION' ? 240_000 : 90_000); // Both return much larger structured JSON than a tutor answer; SIMULATION_CASE_GENERATION timed out on all 3 attempts at ~90s each in live worker run #254 (2026-08-18), so both get a longer ceiling.
 
 // A retrieved chunk counts as genuinely SUPPORTING an answer only above this
 // cosine-similarity floor. search_course_chunks() is called with
@@ -238,7 +239,8 @@ function taskForTutor(message: string): { task: AiTask; complexity: AiComplexity
 async function openAiJson(
   apiKey: string,
   choice: AiModelChoice,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  timeoutMs: number
 ): Promise<
   | { ok: true; value: unknown; usage?: { inputTokens: number; outputTokens: number } }
   | {
@@ -264,7 +266,7 @@ async function openAiJson(
         messages,
         response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       const reason =
@@ -345,7 +347,7 @@ async function generateValidated<T>(args: {
     executeAiTask({
       request: { task: args.task, complexity: args.complexity },
       env: args.env,
-      attempt: (choice) => openAiJson(args.apiKey, choice, messages),
+      attempt: (choice) => openAiJson(args.apiKey, choice, messages, openAiTimeoutMs(args.task)),
     });
   const first = await run([
     { role: 'system', content: args.system },

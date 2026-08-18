@@ -59,10 +59,12 @@ export function AskAvidiaScreen({
   courseId,
   context = EMPTY_CONTEXT,
   initialPrompt,
+  autoSend = false,
 }: {
   courseId: string;
   context?: Record<string, unknown>;
   initialPrompt?: string;
+  autoSend?: boolean;
 }) {
   const { user } = useAuth();
   const [conversation, setConversation] = useState<TutorConversation | null>(null);
@@ -189,6 +191,19 @@ export function AskAvidiaScreen({
     }
     setBusy(false);
   };
+  // Deep links from a just-answered question (e.g. the Practice review
+  // screen's "Why was I wrong?" button) pass autoSend=1 so the explanation
+  // request fires as soon as the conversation is ready, instead of only
+  // prefilling the input and leaving the student to notice and tap "Ask
+  // Avidia" a second time - that extra manual step is what made the
+  // feature read as broken/unresponsive when tapped once.
+  const autoSendDone = useRef(false);
+  useEffect(() => {
+    if (autoSendDone.current || !autoSend || !initialPrompt || !conversation) return;
+    autoSendDone.current = true;
+    send(initialPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend, initialPrompt, conversation]);
   return (
     <Screen title="Ask Avidia">
       <Text style={styles.intro}>

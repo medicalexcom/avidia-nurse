@@ -57,9 +57,15 @@ jest.mock('../simulationApi', () => ({
   abandonSimulation: jest.fn(),
   getSimulationDebrief: jest.fn(),
 }));
+jest.mock('../../aiLearning/aiLearningApi', () => ({
+  ...jest.requireActual('../../aiLearning/aiLearningApi'),
+  listLearningRequests: jest.fn(),
+  requestLearningArtifact: jest.fn(),
+}));
 
 import * as coursesApi from '../../courses/coursesApi';
 import * as simulationApi from '../simulationApi';
+import * as aiLearningApi from '../../aiLearning/aiLearningApi';
 
 const mocked = <T,>(fn: T) => fn as jest.Mock;
 
@@ -102,6 +108,7 @@ beforeEach(() => {
   mocked(simulationApi.listSimulationCases).mockResolvedValue([caseRow]);
   mocked(simulationApi.listOwnSimulationSessions).mockResolvedValue([]);
   mocked(simulationApi.getSimulationCourseId).mockResolvedValue('course-1');
+  mocked(aiLearningApi.listLearningRequests).mockResolvedValue([]);
 });
 
 describe('SimulationLibraryScreen', () => {
@@ -152,6 +159,59 @@ describe('SimulationLibraryScreen', () => {
     expect(bufferedEvents()).toEqual([
       { name: 'simulation_started', caseKey: 'postop_pe', resumed: false },
     ]);
+  });
+
+  it('shows "Creating simulation…" — no manual refresh — after requesting one (spec: library auto-detects readiness)', async () => {
+    mocked(aiLearningApi.requestLearningArtifact).mockResolvedValue({
+      id: 'req-1',
+      kind: 'simulation',
+      status: 'queued',
+      request: {},
+      result: null,
+      error_message: null,
+      created_at: '2026-08-17T00:00:00.000Z',
+    });
+    await render(<SimulationLibraryScreen courseId="course-1" />);
+    await screen.findByText('Start simulation');
+    await fireEvent.press(screen.getByText('Generate New Simulation'));
+    await screen.findByText('Creating simulation…');
+    expect(
+      screen.queryByText(/Simulation requested\. Refresh after the worker validates it/)
+    ).toBeNull();
+  });
+
+  it('surfaces a queued/processing request found on load as "Creating simulation…" with no hidden dev action', async () => {
+    mocked(aiLearningApi.listLearningRequests).mockResolvedValue([
+      {
+        id: 'req-2',
+        kind: 'simulation',
+        status: 'processing',
+        request: {},
+        result: null,
+        error_message: null,
+        created_at: '2026-08-17T00:00:00.000Z',
+      },
+    ]);
+    await render(<SimulationLibraryScreen courseId="course-1" />);
+    await screen.findByText('Creating simulation…');
+  });
+
+  it('shows a clear, dismissible failure instead of silently doing nothing', async () => {
+    mocked(aiLearningApi.listLearningRequests).mockResolvedValue([
+      {
+        id: 'req-3',
+        kind: 'simulation',
+        status: 'failed',
+        request: {},
+        result: null,
+        error_message: 'Avidia could not create that right now.',
+        created_at: '2026-08-17T00:00:00.000Z',
+      },
+    ]);
+    await render(<SimulationLibraryScreen courseId="course-1" />);
+    await screen.findByText("Simulation couldn't be created");
+    await fireEvent.press(screen.getByText('Dismiss'));
+    expect(screen.queryByText("Simulation couldn't be created")).toBeNull();
   });
 });
 

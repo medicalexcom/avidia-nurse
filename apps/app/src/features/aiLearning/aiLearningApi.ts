@@ -61,11 +61,20 @@ export interface TutorConversation {
   context: Record<string, unknown>;
 }
 
+export type GroundingMode = 'course_grounded' | 'mixed' | 'general_knowledge';
+
 export interface TutorMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   source_chunk_ids: string[];
+  /**
+   * Deterministic provenance mode computed by the worker (never inferred
+   * from source_chunk_ids.length, which used to always show "Grounded in N
+   * sources" even when none of the retrieved chunks were actually
+   * relevant). Null on rows written before this column existed.
+   */
+  grounding: GroundingMode | null;
   task: string | null;
   model_tier: string | null;
   created_at: string;
@@ -100,7 +109,7 @@ export async function listTutorMessages(
 ): Promise<TutorMessage[]> {
   const { data, error } = await client
     .from('tutor_messages')
-    .select('id,role,content,source_chunk_ids,task,model_tier,created_at')
+    .select('id,role,content,source_chunk_ids,grounding,task,model_tier,created_at')
     .eq('conversation_id', conversationId)
     .order('created_at');
   if (error) throw error;
@@ -114,7 +123,7 @@ export async function sendTutorMessage(
   conversationId: string,
   content: string,
   context: Record<string, unknown>
-): Promise<void> {
+): Promise<LearningRequest> {
   const { error } = await client.from('tutor_messages').insert({
     conversation_id: conversationId,
     user_id: userId,
@@ -122,12 +131,31 @@ export async function sendTutorMessage(
     content,
   });
   if (error) throw error;
-  await requestLearningArtifact(client, userId, courseId, 'tutor', {
+  return requestLearningArtifact(client, userId, courseId, 'tutor', {
     conversationId,
     message: content,
     ...context,
     nonce: new Date().toISOString(),
   });
+}
+
+/**
+ * Look up a single ai_learning_requests row by id — used to poll the status
+ * of the request just created by sendTutorMessage() so the UI can show a
+ * pending state and stop waiting once it's ready or failed, instead of
+ * requiring a manual refresh (RLS scopes this to the requesting user).
+ */
+export async function getLearningRequestById(
+  client: SupabaseClient,
+  id: string
+): Promise<LearningRequest | null> {
+  const { data, error } = await client
+    .from('ai_learning_requests')
+    .select('id,kind,status,request,result,error_message,created_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as LearningRequest) ?? null;
 }
 
 async function requestFingerprint(value: unknown): Promise<string> {

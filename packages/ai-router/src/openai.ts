@@ -10,11 +10,17 @@ import { AiTier } from './types';
  * Live availability is account-specific and MUST be checked with
  * `pnpm --filter @avidia/worker verify-models` before deploying. Environment
  * overrides make it possible to pin another model without a code change.
+ *
+ * 2026-08: updated from the retired gpt-5-mini / gpt-5.1 / gpt-5.2 ids to the
+ * current gpt-5.6 family (Ask Avidia fix — every chat completion was failing
+ * because those ids no longer resolve on OpenAI's API; see pricing.ts for the
+ * matching cost update). Luna/Terra/Sol map cleanly onto the existing
+ * ECONOMY/STANDARD/ADVANCED tiers by OpenAI's own cost/capability ordering.
  */
 export const OPENAI_CHAT_MODELS: Record<Exclude<AiTier, 'SPECIALIZED'>, string> = {
-  ECONOMY: 'gpt-5-mini',
-  STANDARD: 'gpt-5.1',
-  ADVANCED: 'gpt-5.2',
+  ECONOMY: 'gpt-5.6-luna',
+  STANDARD: 'gpt-5.6-terra',
+  ADVANCED: 'gpt-5.6-sol',
 };
 
 /**

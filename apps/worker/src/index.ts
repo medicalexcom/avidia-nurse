@@ -56,6 +56,22 @@ function log(message: string): void {
   console.log(`[worker ${new Date().toISOString()}] ${message}`);
 }
 
+/**
+ * Safely describe a thrown value for logs. Supabase/Postgrest errors are
+ * plain objects, not `Error` instances, so `String(error)` on them collapses
+ * to the unhelpful "[object Object]" — JSON.stringify surfaces their actual
+ * code/message/hint instead. Never includes prompt content or secrets: the
+ * only inputs here are error shapes from Supabase/network/provider clients.
+ */
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 async function sweepStale(
   client: WorkerClient,
   indexer: IndexerClient,
@@ -148,8 +164,15 @@ async function runOnce(
   }
   log(`drained question queue: ${generated.length} document(s) generated`);
   let learningCount = 0;
-  while ((await processLearningRequest(learning, embeddings, apiKey, process.env)) !== 'idle') {
-    learningCount += 1;
+  try {
+    while ((await processLearningRequest(learning, embeddings, apiKey, process.env)) !== 'idle') {
+      learningCount += 1;
+    }
+  } catch (error) {
+    // A claim failure (the only call in processLearningRequest not already
+    // guarded by its own try/catch) must not abort the whole scheduled run
+    // before it finishes — the next run will retry any remaining requests.
+    log(`personalized learning queue error: ${describeError(error)}`);
   }
   log(`drained personalized learning queue: ${learningCount} request(s)`);
 }
@@ -246,7 +269,7 @@ async function runLoop(
       );
       if (learningOutcome !== 'idle') continue;
     } catch (error) {
-      log(`worker error: ${error instanceof Error ? error.message : String(error)}`);
+      log(`worker error: ${describeError(error)}`);
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
@@ -298,6 +321,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  log(`fatal: ${error instanceof Error ? error.message : String(error)}`);
+  log(`fatal: ${describeError(error)}`);
   process.exit(1);
 });

@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   executeAiTask,
+  AiTaskFailedError,
   type AiComplexity,
   type AiModelChoice,
   type AiTask,
@@ -20,6 +21,32 @@ const SAFE_FAILURE =
   'Avidia could not create that right now. Your stored study tools still work; please try again.';
 const MAX_HISTORY = 10;
 const MAX_SOURCES = 8;
+
+// A retrieved chunk counts as genuinely SUPPORTING an answer only above this
+// cosine-similarity floor. search_course_chunks() is called with
+// p_min_similarity: 0 (broad recall, so the lexical leg and lightly-related
+// vector neighbors still surface for the model to consider), which means the
+// vector leg always returns its v_pool nearest neighbors regardless of how
+// distant they actually are — hence the live bug where an HIV/AIDS question
+// "retrieved" 8 chunks about hypocretins/orexins/sleep disorders and the UI
+// still said "Grounded in 8 course sources." Retrieved is not the same claim
+// as supporting; this floor is what turns the former into the latter. 0.45
+// is a deliberately conservative deterministic cut for OpenAI text-embedding
+// cosine similarity: on-topic course material for a question typically
+// scores well above this, unrelated material well below it.
+export const GROUNDING_SIMILARITY_FLOOR = 0.45;
+
+export type GroundingMode = 'course_grounded' | 'mixed' | 'general_knowledge';
+
+// Short, exact-match presets ("Go deeper.", "Simplify.", ...) carry zero
+// retrieval signal on their own — searching for the literal text "Go
+// deeper." finds nothing about the actual topic being discussed, and (before
+// this fix) silently fell back to a mastery-ranked concept list instead,
+// which is how a live "Go deeper" on an HIV/AIDS answer surfaced sources
+// about parosmia and presbycusis. Recovering the prior substantive student
+// question keeps a follow-up grounded in the same topic.
+const GENERIC_FOLLOWUP_RE =
+  /^(go deeper\.?|simplify\.?|explain (?:this|that)\.?|give me an example\.?|why was i wrong\??)$/i;
 
 export type LearningRequestKind = 'case_study' | 'simulation' | 'tutor';
 export type TargetMode =
@@ -41,6 +68,8 @@ interface SourceRow {
   document_filename: string;
   content: string;
   source_locator: SourceLocator;
+  /** Cosine similarity of the vector leg (0 when only the lexical leg hit). */
+  similarity: number;
 }
 
 export interface CaseStudyDraft {
@@ -107,6 +136,44 @@ export function selectPersonalization(
   return ordered.slice(0, mode === 'recommended' ? 3 : 1).map(({ id, name }) => ({ id, name }));
 }
 
+/**
+ * Deterministic provenance decision (never derived from the model's own
+ * claim — that is what let a refusal display "Grounded in 8 course
+ * sources"). COURSE_GROUNDED only when every retrieved chunk clears the
+ * relevance floor; GENERAL_KNOWLEDGE when none do (course material simply
+ * doesn't cover this — never a reason to refuse); MIXED otherwise.
+ */
+export function classifyGrounding(sources: SourceRow[]): {
+  mode: GroundingMode;
+  relevantSources: SourceRow[];
+} {
+  const relevantSources = sources.filter((s) => s.similarity >= GROUNDING_SIMILARITY_FLOOR);
+  if (relevantSources.length === 0) return { mode: 'general_knowledge', relevantSources };
+  if (relevantSources.length === sources.length)
+    return { mode: 'course_grounded', relevantSources };
+  return { mode: 'mixed', relevantSources };
+}
+
+/**
+ * The retrieval query for a tutor turn. A bare follow-up preset carries no
+ * topic on its own, so it is combined with the most recent substantive
+ * student question in the bounded conversation history — otherwise "Go
+ * deeper" re-retrieves from scratch with only the words "Go deeper" and
+ * drifts onto whatever the mastery-ranked concept list would have picked,
+ * unrelated to what the student was actually asking about.
+ */
+export function buildTutorQuery(
+  message: string,
+  history: Array<{ role: string; content: string }>
+): string {
+  const trimmed = message.trim();
+  if (!GENERIC_FOLLOWUP_RE.test(trimmed)) return trimmed;
+  const priorQuestion = [...history]
+    .reverse()
+    .find((m) => m.role === 'user' && !GENERIC_FOLLOWUP_RE.test(m.content.trim()));
+  return priorQuestion ? `${priorQuestion.content} ${trimmed}` : trimmed;
+}
+
 export function validateCaseStudyDraft(
   value: unknown,
   sourceCount: number
@@ -133,7 +200,16 @@ export function validateCaseStudyDraft(
         q.correctOptionIndexes.some((i) => !Number.isInteger(i) || i < 0 || i >= optionCount)
       )
         errors.push(`question ${pi}.${qi} answer is invalid`);
-      if (
+      // A general-knowledge draft (sourceCount === 0, spec: course-first,
+      // general-knowledge-fallback — a course simply not covering a topic
+      // must never be a hard failure) has no sources to cite; requiring a
+      // non-empty sourceIndexes in that case made every such draft
+      // unvalidatable by construction. With real sources available, the
+      // original strict requirement still applies unchanged.
+      if (sourceCount === 0) {
+        if (q.sourceIndexes?.length)
+          errors.push(`question ${pi}.${qi} cites a source but none were provided`);
+      } else if (
         !q.sourceIndexes?.length ||
         q.sourceIndexes.some((i) => !Number.isInteger(i) || i < 0 || i >= sourceCount)
       )
@@ -199,11 +275,21 @@ async function openAiJson(
             : response.status === 402
               ? 'quota_exceeded'
               : 'other';
+      // The status code alone ("other") is not enough to diagnose a live
+      // failure — OpenAI's error body names the actual cause (bad request,
+      // auth, model access). Safe to log: it's OpenAI's own response, never
+      // our secret key or student content beyond what we already sent.
+      let bodySnippet = '';
+      try {
+        bodySnippet = (await response.text()).slice(0, 500);
+      } catch {
+        // best-effort only
+      }
       return {
         ok: false,
         reason,
         retryableSameModel: response.status === 429 || response.status >= 500,
-        detail: `OpenAI HTTP ${response.status}`,
+        detail: `OpenAI HTTP ${response.status}${bodySnippet ? `: ${bodySnippet}` : ''}`,
       };
     }
     const payload = (await response.json()) as {
@@ -303,13 +389,44 @@ export async function processLearningRequest(
     const mode = String(row.request.mode ?? 'recommended') as TargetMode;
     const difficulty = String(row.request.difficulty ?? 'application') as CaseDifficulty;
     const selected = selectPersonalization(mode, context.concepts, String(row.request.topic ?? ''));
+    const message = String(row.request.message ?? '').trim();
+    // Tutor retrieval must search for what the student actually asked, not
+    // a mastery-ranked concept list disconnected from the question — that
+    // mismatch was the root cause of an HIV/AIDS question retrieving
+    // hypocretin/orexin/sleep-disorder chunks (mode defaults to
+    // 'recommended' for every chat message, since the chat UI never sets
+    // it, so `selected` was always the three lowest-mastery course
+    // concepts regardless of what was typed). It also fed directly into
+    // "Create a simulation on this" / "Give me a case" handoffs below,
+    // which is why a live simulation request was found queued with
+    // topic "hypocretins (orexins) parosmia presbycusis..." instead of HIV.
     const query =
-      (mode === 'upcoming_exam' ? context.upcomingExam : null) ??
-      (selected.map((c) => c.name).join(' ') || String(row.request.message ?? context.courseTitle));
+      row.kind === 'tutor'
+        ? buildTutorQuery(message, context.history) || context.courseTitle
+        : ((mode === 'upcoming_exam' ? context.upcomingExam : null) ??
+          (selected.map((c) => c.name).join(' ') || message || context.courseTitle));
     void embeddings; // retrieval implementation owns query embedding; retained as an explicit server-only dependency.
-    const sources = await client.search(row.course_id, query);
-    if (!sources.length) throw new Error('no grounded course sources');
-    const base = `Course: ${context.courseTitle}\nTarget mode: ${mode}${context.upcomingExam ? `\nUpcoming exam: ${context.upcomingExam}` : ''}\nSelected structured concepts: ${selected.map((c) => c.name).join(', ')}\n${context.explicitContext}\nSources:\n${sourcePrompt(sources)}`;
+    const retrieved = await client.search(row.course_id, query);
+    // Retrieved ≠ supporting. search_course_chunks() always returns its best
+    // available neighbors (p_min_similarity: 0 — broad recall by design), so
+    // "N chunks came back" is never itself evidence the course covers this
+    // question. Only chunks clearing GROUNDING_SIMILARITY_FLOOR count as
+    // course grounding, for every request kind alike.
+    const { mode: groundingMode, relevantSources: sources } = classifyGrounding(retrieved);
+    // Course-first, general-knowledge-fallback policy: a topic the course
+    // doesn't cover (or only partly covers) is never a hard failure — for
+    // case_study/simulation authoring same as for tutor replies — it is a
+    // clearly, honestly labeled general nursing/medical knowledge answer or
+    // artifact instead. Never fabricate course citations either way.
+    const groundingNote =
+      groundingMode === 'course_grounded'
+        ? ''
+        : groundingMode === 'mixed'
+          ? "\nSome retrieved material was not relevant and has been excluded below. Use the remaining numbered sources where they apply, and general nursing/medical knowledge for anything they do not cover. Disclose plainly which parts are not grounded in the student's course material."
+          : '\nNo retrieved course source was relevant to this question. This topic was not found in the course material retrieved, so answer from general nursing/medical knowledge only and say so plainly. Do not refuse, and never invent a course citation.';
+    const base = `Course: ${context.courseTitle}\nTarget mode: ${mode}${context.upcomingExam ? `\nUpcoming exam: ${context.upcomingExam}` : ''}\nSelected structured concepts: ${selected.map((c) => c.name).join(', ')}\n${context.explicitContext}${groundingNote}\nSources:\n${sourcePrompt(sources)}`;
+    const artifactGrounding =
+      groundingMode === 'general_knowledge' ? 'general_nursing_knowledge' : groundingMode;
 
     if (row.kind === 'case_study') {
       const complexity: AiComplexity =
@@ -320,7 +437,7 @@ export async function processLearningRequest(
         complexity,
         env,
         system:
-          'Author a fictional ABSN nursing case study grounded only in numbered sources. Return JSON with title, patient{name,age,background}, history, presentation, vitals, labs{name,value,interpretation}, medications, findings, phases{title,update,questions{stem,options,correctOptionIndexes,rationale,sourceIndexes}}. Never include real patient data.',
+          'Author a fictional ABSN nursing case study. Prefer the numbered course sources when they are relevant. When they are absent or not relevant, author from general nursing knowledge instead and say so — never fabricate a citation to course material that was not provided. Return JSON with title, patient{name,age,background}, history, presentation, vitals, labs{name,value,interpretation}, medications, findings, phases{title,update,questions{stem,options,correctOptionIndexes,rationale,sourceIndexes}}. If no numbered sources are provided, leave every sourceIndexes empty. Never include real patient data.',
         user: `${base}\nDifficulty: ${difficulty}.`,
         validate: (v) => validateCaseStudyDraft(v, sources.length),
       });
@@ -330,6 +447,7 @@ export async function processLearningRequest(
         sources,
         selected,
         difficulty,
+        grounding: artifactGrounding,
         choice: generated.choice,
         fingerprint:
           row.fingerprint ??
@@ -351,8 +469,7 @@ export async function processLearningRequest(
         task: 'SIMULATION_CASE_GENERATION',
         complexity: 'HIGH',
         env,
-        system:
-          'Author a complete SimulationCaseDefinition JSON for Avidia M11 engineVersion 1. AI only authors this closed rulebook; runtime is deterministic. Include a fictional adult, valid physiologic values, controlled actions/rules, reachable terminating outcomes, critical/unsafe actions, scoring, and conceptMappings. Return JSON only.',
+        system: `Author a complete SimulationCaseDefinition JSON for Avidia M11 engineVersion 1. AI only authors this closed rulebook; runtime is deterministic. Prefer the numbered course sources when they are relevant; when absent or not relevant, author from general nursing knowledge instead and say so in the description — never fabricate a course citation. Include a fictional adult, valid physiologic values, controlled actions/rules, reachable terminating outcomes, critical/unsafe actions, scoring, and conceptMappings. Every conceptMappings[].conceptName must be exactly one of these (do not invent other names): ${selected.map((c) => c.name).join(', ') || '(none — omit conceptMappings)'}. Return JSON only.`,
         user: `${base}\nRequested difficulty: ${difficulty}. Source chunk ids available: ${sources.map((s) => s.chunk_id).join(', ')}.`,
         validate: (v) => {
           try {
@@ -379,6 +496,7 @@ export async function processLearningRequest(
         definition: generated.value,
         sources,
         selected,
+        grounding: artifactGrounding,
         choice: generated.choice,
         fingerprint:
           row.fingerprint ??
@@ -394,7 +512,6 @@ export async function processLearningRequest(
       return 'ready';
     }
 
-    const message = String(row.request.message ?? '').trim();
     const activeSimulation = row.request.contextType === 'active_simulation';
     if (activeSimulation && blocksActiveSimulationDisclosure(message)) {
       const result = await client.storeTutor({
@@ -402,8 +519,31 @@ export async function processLearningRequest(
         content:
           'I can help you interpret information you have already revealed, but I cannot expose hidden findings, scoring rules, or the correct next action during an active simulation.',
         sources: [],
+        grounding: 'general_knowledge',
         task: 'SIMULATION_DIALOGUE',
         tier: 'STANDARD',
+      });
+      await client.complete(row.id, result);
+      return 'ready';
+    }
+    // "Why was I wrong?" is only meaningful with question-attempt context
+    // (the app already disables the preset button without one, but the
+    // worker must not trust that — nothing stops a request with this text
+    // and no questionId from reaching the queue some other way). Without
+    // context there is nothing to evaluate; guide the student instead of
+    // spending a model call producing a generic, unhelpful answer.
+    if (
+      /why was i wrong|evaluate my reasoning|my reasoning/i.test(message) &&
+      typeof row.request.questionId !== 'string'
+    ) {
+      const result = await client.storeTutor({
+        row,
+        content:
+          "I can explain why an answer was right or wrong once you ask this from a specific question's review screen, so I have the question, your response, and the correct answer to reference. Try it from there, or ask me to explain the concept directly.",
+        sources: [],
+        grounding: 'general_knowledge',
+        task: 'RAG_ANSWER',
+        tier: 'ECONOMY',
       });
       await client.complete(row.id, result);
       return 'ready';
@@ -414,6 +554,7 @@ export async function processLearningRequest(
         content:
           'Your scored adaptive quiz is ready. It uses your existing validated question bank and the same deterministic scoring and mastery pipeline as Study.',
         sources,
+        grounding: groundingMode,
         task: 'QUESTION_GENERATION_ROUTINE',
         tier: 'ECONOMY',
       });
@@ -434,6 +575,7 @@ export async function processLearningRequest(
             ? 'I sent this to the simulation authoring pipeline. It will be validated before it appears in your simulation library.'
             : 'I sent this to the case-study authoring pipeline. It will appear in Case Studies after validation.',
         sources,
+        grounding: groundingMode,
         task: handoffKind === 'simulation' ? 'SIMULATION_CASE_GENERATION' : 'CASE_STUDY_GENERATION',
         tier: handoffKind === 'simulation' ? 'ADVANCED' : 'STANDARD',
         handoffId,
@@ -447,7 +589,23 @@ export async function processLearningRequest(
       ...routed,
       env,
       system:
-        'You are Ask Avidia, a course-aware nursing tutor. Answer from numbered course sources, state when evidence is insufficient, never invent citations, and return {"answer":"..."}. During active simulation discuss only explicitly supplied revealed state and never prescribe the exact next action.',
+        // OpenAI's json_object response_format rejects the request with a
+        // 400 unless the literal word "JSON" appears somewhere in the
+        // messages sent — this was the actual, previously-unlogged cause of
+        // every live Ask Avidia reply failing (both the primary and
+        // fallback model attempts hit this same 400, surfaced only as
+        // failureReason "other" before the improved error logging added
+        // here). Say so explicitly instead of only showing the shape.
+        //
+        // Course-first, general-knowledge-fallback (spec): prefer numbered
+        // course sources when relevant, but a topic the course doesn't
+        // cover is never a reason to refuse — answer from general
+        // nursing/medical knowledge instead and disclose that plainly. The
+        // live HIV/AIDS refusal happened because the model was only ever
+        // told to "state when evidence is insufficient," which it
+        // (correctly, given no other instruction) read as license to
+        // decline rather than fall back.
+        'You are Ask Avidia, a course-aware nursing tutor. Prefer the numbered course sources when they are relevant. When they are absent or not relevant to the student\'s question, you MUST still answer using your general nursing/medical knowledge — never refuse and never tell the student the topic is outside their course. Never invent a citation to course material that was not provided. Respond with JSON of the form {"answer":"..."}. During active simulation discuss only explicitly supplied revealed state and never prescribe the exact next action.',
       user: `${base}\nBounded conversation:\n${context.history
         .slice(-MAX_HISTORY)
         .map((m) => `${m.role}: ${m.content}`)
@@ -458,16 +616,37 @@ export async function processLearningRequest(
           ? { ok: true, value: v as { answer: string } }
           : { ok: false, errors: ['answer is required'] },
     });
+    // The disclosure copy is exact and deterministic, never derived from
+    // whatever the model happened to say — a model can (and, live, did)
+    // claim course grounding it doesn't have.
+    const content =
+      groundingMode === 'general_knowledge'
+        ? `This topic was not found in the course material I retrieved, so the following uses general nursing/medical knowledge.\n\n${answer.value.answer}`
+        : groundingMode === 'mixed'
+          ? `${answer.value.answer}\n\n(Part of this answer uses general nursing/medical knowledge beyond what your course material covers.)`
+          : answer.value.answer;
     const result = await client.storeTutor({
       row,
-      content: answer.value.answer,
+      content,
       sources,
+      grounding: groundingMode,
       task: routed.task,
       tier: answer.choice.tier,
     });
     await client.complete(row.id, result);
     return 'ready';
-  } catch {
+  } catch (error) {
+    // The student-facing message must stay generic (SAFE_FAILURE); the real
+    // cause still needs to reach logs or every live failure is a black box.
+    // AiTaskFailedError carries the provider-level detail (HTTP status +
+    // body) in `.detail` — never in `.message`, which is student-safe.
+    const detail =
+      error instanceof AiTaskFailedError
+        ? error.detail
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    console.error(`[worker] learning request ${row.id} (${row.kind}) failed: ${detail}`);
     await client.fail(row.id, SAFE_FAILURE);
     return 'failed';
   }
@@ -481,7 +660,16 @@ export function createSupabaseLearningGenerationClient(
     async claim() {
       const { data, error } = await supabase.rpc('claim_ai_learning_request');
       if (error) throw error;
-      return (data as LearningRequestRow | null) ?? null;
+      // PostgREST returns a single-composite RPC's SQL NULL as an object
+      // with every column present but null (not a JSON null), because
+      // `select * from claim_ai_learning_request()` yields exactly one row
+      // even when the plpgsql body does `return null`. `?? null` only
+      // catches a true null/undefined, so an empty queue was silently
+      // treated as a real (all-null) claimed row — crashing downstream on
+      // `row.request.conversationId` and then failing again trying to
+      // fail(null). Guard on `id` actually being present instead.
+      const row = data as LearningRequestRow | null;
+      return row && row.id ? row : null;
     },
     async loadContext(row) {
       const [{ data: course }, { data: concepts }, { data: mastery }, { data: exams }] =
@@ -594,6 +782,7 @@ export function createSupabaseLearningGenerationClient(
         difficulty: CaseDifficulty;
         selected: Array<{ id: string }>;
         sources: SourceRow[];
+        grounding: string;
         choice: AiModelChoice;
         fingerprint: string;
       };
@@ -605,7 +794,7 @@ export function createSupabaseLearningGenerationClient(
           course_id: a.row.course_id,
           title: a.draft.title,
           difficulty: a.difficulty,
-          grounding: 'course_grounded',
+          grounding: a.grounding,
           content: a.draft,
           concept_ids: a.selected.map((c) => c.id).filter(Boolean),
           source_chunk_ids: a.sources.map((s) => s.chunk_id),
@@ -628,6 +817,7 @@ export function createSupabaseLearningGenerationClient(
         definition: SimulationCaseDefinition;
         selected: Array<{ id: string }>;
         sources: SourceRow[];
+        grounding: string;
         choice: AiModelChoice;
         fingerprint: string;
       };
@@ -640,6 +830,11 @@ export function createSupabaseLearningGenerationClient(
         promptVersion: LEARNING_PROMPT_VERSION,
         generatorVersion: LEARNING_GENERATOR_VERSION,
         validatorVersion: LEARNING_VALIDATOR_VERSION,
+        // Same course-first, general-knowledge-fallback provenance as tutor
+        // replies and case studies — surfaced to the client so the
+        // simulation library can label a generated case honestly instead of
+        // implying every AI-authored case is course-grounded.
+        grounding: a.grounding,
         fingerprint: a.fingerprint,
         conceptIds: a.selected.map((c) => c.id).filter(Boolean),
         sourceChunkIds: a.sources.map((s) => s.chunk_id),
@@ -674,6 +869,7 @@ export function createSupabaseLearningGenerationClient(
         row: LearningRequestRow;
         content: string;
         sources: SourceRow[];
+        grounding?: GroundingMode;
         task: AiTask;
         tier: string;
       };
@@ -686,11 +882,16 @@ export function createSupabaseLearningGenerationClient(
           user_id: a.row.user_id,
           role: 'assistant',
           content: a.content,
+          // Only sources that actually cleared the relevance floor are
+          // stored — this is what the client renders as "Grounded in N
+          // course sources," so a merely-retrieved-but-irrelevant chunk can
+          // no longer be displayed as supporting evidence.
           source_chunk_ids: a.sources.map((s) => s.chunk_id),
+          grounding: a.grounding ?? null,
           task: a.task,
           model_tier: a.tier,
         })
-        .select('id,content,source_chunk_ids,task,model_tier,created_at')
+        .select('id,content,source_chunk_ids,grounding,task,model_tier,created_at')
         .single();
       if (error) throw error;
       return { artifactType: 'tutor_message', ...data };

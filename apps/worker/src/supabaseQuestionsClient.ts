@@ -24,6 +24,7 @@ interface ChunkRow {
 }
 
 interface ConceptSourceRow {
+  chunk_id: string;
   concepts: {
     normalized_key: string;
     canonical_name: string;
@@ -72,10 +73,11 @@ export function createSupabaseQuestionsClient(client: SupabaseClient): Questions
       // Concepts evidenced in THIS document (via concept_sources), active only.
       const { data: conceptRows, error: conceptError } = await client
         .from('concept_sources')
-        .select('concepts (normalized_key, canonical_name, concept_type, emphasis_score, status)')
+        .select('chunk_id, concepts (normalized_key, canonical_name, concept_type, emphasis_score, status)')
         .eq('document_id', documentId);
       if (conceptError) throw conceptError;
       const byKey = new Map<string, GenerationConcept>();
+      const chunksByConcept: Record<string, string[]> = {};
       for (const row of (conceptRows ?? []) as unknown as ConceptSourceRow[]) {
         const concept = row.concepts;
         if (!concept || concept.status !== 'active') continue;
@@ -85,6 +87,7 @@ export function createSupabaseQuestionsClient(client: SupabaseClient): Questions
           type: concept.concept_type,
           emphasisScore: Number(concept.emphasis_score),
         });
+        (chunksByConcept[concept.normalized_key] ??= []).push(row.chunk_id);
       }
 
       const { data: chunkRows, error: chunkError } = await client
@@ -99,7 +102,7 @@ export function createSupabaseQuestionsClient(client: SupabaseClient): Questions
         locator: row.source_locator ? describeLocator(row.source_locator) : 'source material',
       }));
 
-      return { concepts: [...byKey.values()], chunks };
+      return { concepts: [...byKey.values()], chunks, chunksByConcept };
     },
 
     async applyGeneration(documentId: string, payload: QuestionGenerationRpcPayload) {

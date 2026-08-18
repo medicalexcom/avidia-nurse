@@ -181,8 +181,8 @@ describe('AskAvidiaScreen', () => {
     );
   });
 
-    it('auto-sends the deep-linked prompt when autoSend is set, without a second manual tap', async () => {
-      mocked(aiLearningApi.sendTutorMessage).mockResolvedValue({
+  it('auto-sends the deep-linked prompt when autoSend is set, without a second manual tap', async () => {
+    mocked(aiLearningApi.sendTutorMessage).mockResolvedValue({
       id: 'request-4',
       kind: 'tutor',
       status: 'queued',
@@ -199,7 +199,7 @@ describe('AskAvidiaScreen', () => {
       result: null,
       error_message: null,
       created_at: '2026-08-16T00:00:00.000Z',
-  });
+    });
 
     await render(
       <AskAvidiaScreen
@@ -218,7 +218,7 @@ describe('AskAvidiaScreen', () => {
       'Why was I wrong?',
       expect.objectContaining({ questionId: 'question-1' })
     );
-    // Only ever sent once - no double-fire from re-renders.
+    // Only ever sent once — no double-fire from re-renders.
     expect(aiLearningApi.sendTutorMessage).toHaveBeenCalledTimes(1);
   });
 

@@ -181,6 +181,59 @@ describe('AskAvidiaScreen', () => {
     );
   });
 
+    it('auto-sends the deep-linked prompt when autoSend is set, without a second manual tap', async () => {
+      mocked(aiLearningApi.sendTutorMessage).mockResolvedValue({
+      id: 'request-4',
+      kind: 'tutor',
+      status: 'queued',
+      request: {},
+      result: null,
+      error_message: null,
+      created_at: '2026-08-16T00:00:00.000Z',
+    });
+    mocked(aiLearningApi.getLearningRequestById).mockResolvedValue({
+      id: 'request-4',
+      kind: 'tutor',
+      status: 'queued',
+      request: {},
+      result: null,
+      error_message: null,
+      created_at: '2026-08-16T00:00:00.000Z',
+  });
+
+    await render(
+      <AskAvidiaScreen
+        courseId="course-1"
+        context={{ questionId: 'question-1' }}
+        initialPrompt="Why was I wrong?"
+        autoSend
+      />
+    );
+    await waitFor(() => expect(aiLearningApi.sendTutorMessage).toHaveBeenCalled());
+    expect(aiLearningApi.sendTutorMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      'course-1',
+      'conversation-1',
+      'Why was I wrong?',
+      expect.objectContaining({ questionId: 'question-1' })
+    );
+    // Only ever sent once - no double-fire from re-renders.
+    expect(aiLearningApi.sendTutorMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-send without the autoSend flag, even with a prefilled prompt', async () => {
+    await render(
+      <AskAvidiaScreen
+        courseId="course-1"
+        context={{ questionId: 'question-1' }}
+        initialPrompt="Why was I wrong?"
+      />
+    );
+    await waitFor(() => expect(aiLearningApi.listTutorMessages).toHaveBeenCalled());
+    expect(aiLearningApi.sendTutorMessage).not.toHaveBeenCalled();
+  });
+
   describe('provenance badge (spec: "Retrieved ≠ supporting" — never derived from source count alone)', () => {
     const base = {
       id: 'm-a',

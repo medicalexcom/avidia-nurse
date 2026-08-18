@@ -888,21 +888,21 @@ export function PracticeScreen({
         <View style={styles.flagPanel}>
           {(
             [
-              ['Ask Avidia', ''],
-              ['Explain this', 'Explain this.'],
-              ['Why was I wrong?', 'Why was I wrong?'],
-              ['Simplify', 'Simplify.'],
-              ['Go deeper', 'Go deeper.'],
-              ['Give me an example', 'Give me an example.'],
-              ['Quiz me again', 'Quiz me.'],
+              ['Ask Avidia', '', false],
+              ['Explain this', 'Explain this.', false],
+              ['Why was I wrong?', 'Why was I wrong?', true],
+              ['Simplify', 'Simplify.', false],
+              ['Go deeper', 'Go deeper.', false],
+              ['Give me an example', 'Give me an example.', false],
+              ['Quiz me again', 'Quiz me.', false],
             ] as const
-          ).map(([label, prompt]) => (
+          ).map(([label, prompt, autoSend]) => (
             <SecondaryButton
               key={label}
               label={label}
               onPress={() =>
                 router.push(
-                  `/course/${courseId}/ask-avidia?questionId=${question.id}&prompt=${encodeURIComponent(prompt)}`
+                  `/course/${courseId}/ask-avidia?questionId=${question.id}&prompt=${encodeURIComponent(prompt)}${autoSend ? '&autoSend=1' : ''}`
                 )
               }
             />

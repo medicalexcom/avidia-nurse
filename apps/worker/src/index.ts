@@ -154,7 +154,8 @@ async function runOnce(
       log(
         `document ${outcome.documentId} questions ready ` +
           `(${outcome.inserted} inserted, ${outcome.duplicates} duplicates, ` +
-          `${outcome.rejected} rejected, ${outcome.flagged} flagged, ${outcome.links} links)`
+          `${outcome.rejected} rejected, ${outcome.flagged} flagged, ${outcome.links} links, ` +
+          `${outcome.batches} batches)`
       );
     } else if (outcome.status === 'skipped') {
       log(`document ${outcome.documentId} questions unchanged (fingerprint match, no AI call)`);
@@ -246,7 +247,7 @@ async function runLoop(
           `document ${questionsOutcome.documentId} questions ready ` +
             `(${questionsOutcome.inserted} inserted, ${questionsOutcome.duplicates} duplicates, ` +
             `${questionsOutcome.rejected} rejected, ${questionsOutcome.flagged} flagged, ` +
-            `${questionsOutcome.links} links)`
+            `${questionsOutcome.links} links, ${questionsOutcome.batches} batches)`
         );
         continue;
       }

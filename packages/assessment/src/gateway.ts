@@ -34,9 +34,9 @@ import {
  */
 
 /** Bump when the generation pipeline changes in a way that requires re-runs. */
-export const QUESTION_GENERATION_VERSION = 'v1';
+export const QUESTION_GENERATION_VERSION = 'v2';
 /** Bump when the prompt text changes (spec AD prompt versioning). */
-export const QUESTION_PROMPT_VERSION = 'p1';
+export const QUESTION_PROMPT_VERSION = 'p2';
 
 export interface QuestionGenerationMetadata {
   provider: string;
@@ -189,7 +189,9 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
     const userPrompt =
       `Concepts to cover (use the given key as concept_key):\n${conceptList}\n\n` +
       `Course material excerpts:\n${excerpts}\n\n` +
-      `Write 1-2 questions per concept, mixing question types, difficulties and cognitive levels.`;
+      `Write 2-3 questions for EACH concept listed above (never fewer than 2 when the ` +
+      `excerpts support it), mixing question types, difficulties and cognitive levels ` +
+      `across the set so the batch is not repetitive.`;
 
     const raw = await this.complete([
       { role: 'system', content: QUESTION_GENERATION_SYSTEM_PROMPT },

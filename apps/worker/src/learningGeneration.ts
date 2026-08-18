@@ -22,7 +22,11 @@ const SAFE_FAILURE =
 const MAX_HISTORY = 10;
 const MAX_SOURCES = 8;
 const openAiTimeoutMs = (task: AiTask): number =>
-  task === 'SIMULATION_CASE_GENERATION' || task === 'CASE_STUDY_GENERATION' ? 240_000 : 90_000; // Both return much larger structured JSON than a tutor answer; SIMULATION_CASE_GENERATION timed out on all 3 attempts at ~90s each in live worker run #254 (2026-08-18), so both get a longer ceiling.
+  task === 'SIMULATION_CASE_GENERATION'
+    ? 240_000
+    : task === 'CASE_STUDY_GENERATION'
+      ? 150_000
+      : 90_000; // SIMULATION_CASE_GENERATION is always ADVANCED with no fallback tier (tiers.ts) - 3 attempts x 240s = 12 min, safely under the worker job's 20-minute cap. CASE_STUDY_GENERATION can fall back STANDARD -> ADVANCED (6 attempts total), so it gets a smaller ceiling (6 x 150s = 15 min) to stay under that same cap - both timeouts confirmed against live worker run #254 (2026-08-18) and PR #5 review.
 
 // A retrieved chunk counts as genuinely SUPPORTING an answer only above this
 // cosine-similarity floor. search_course_chunks() is called with

@@ -490,10 +490,12 @@ export async function processLearningRequest(
             return errors.length
               ? { ok: false as const, errors }
               : { ok: true as const, value: def };
-          } catch {
+          } catch (err) {
+            // validateCase() can throw a raw error on malformed model JSON instead of returning descriptive errors (confirmed live in worker run #257, 2026-08-18) - surface err.message so logs and the repair-retry prompt see the real problem, not a generic string.
+            const detail = err instanceof Error ? err.message : String(err);
             return {
               ok: false as const,
-              errors: ['draft does not match the SimulationCaseDefinition schema'],
+              errors: [`draft does not match the SimulationCaseDefinition schema: ${detail}`],
             };
           }
         },

@@ -32,6 +32,17 @@ import { errorMessage } from './messages';
  * version/generation version plus the selected concept keys and the exact
  * chunk ids and contents is compared with the stored fingerprint before any
  * AI call. Unchanged material never pays for generation again.
+ *
+ * Yield (spec Y/AD, widened): one claimed document is worked in multiple
+ * concept batches, not one. Each batch asks for a bounded slice of the
+ * document's highest-emphasis concepts and is grounded ONLY in the chunks
+ * concept_sources actually links to that slice (never the whole document),
+ * so the model's context stays focused instead of drowning in unrelated
+ * material. Batches keep running until TARGET_QUESTIONS_PER_DOCUMENT is
+ * reached, MAX_GENERATION_BATCHES_PER_DOCUMENT caps the run, or
+ * MAX_CONSECUTIVE_EMPTY_BATCHES trips a circuit breaker on unproductive
+ * material — whichever comes first. question_status still flips to 'ready'
+ * exactly once, after every batch for this claim has run.
  */
 
 /** Minimal projection of a documents row the questions stage needs. */
@@ -45,6 +56,16 @@ export interface GenerableDocument {
 export interface GenerationInputs {
   concepts: GenerationConcept[];
   chunks: GenerationChunk[];
+  /**
+   * concept_sources evidence links: concept key -> ids of chunks (within
+   * `chunks`) that actually evidence it. Lets one claimed document be worked
+   * in several concept batches, each grounded only in the material relevant
+   * to it rather than the whole document. A concept with no recorded link
+   * (or an entirely empty map, e.g. an older client) falls back to the full
+   * chunk set for its batch — evidence scoping is a focus improvement, never
+   * a reason to generate ungrounded.
+   */
+  chunksByConcept: Record<string, string[]>;
 }
 
 export interface QuestionsApplyResult {
@@ -93,6 +114,8 @@ export type QuestionsOutcome =
       rejected: number;
       flagged: number;
       links: number;
+      /** Number of concept-batch generation calls this claim actually ran. */
+      batches: number;
     }
   | { status: 'failed'; documentId: string };
 
@@ -100,17 +123,80 @@ export type QuestionsOutcome =
 export const STALE_QUESTIONS_MS = 15 * 60 * 1000;
 
 /**
- * Cap on concepts per generation call (spec Y/AC): the highest-emphasis
- * concepts are enough for a useful first question set, and the payload stays
- * small and cheap. Deterministic selection via pickGenerationConcepts.
+ * Cap on concepts per single generation call (spec Y/AC): a batch this size
+ * keeps one provider call's payload small and cheap and its grounding
+ * focused. Deterministic selection via pickGenerationConcepts.
  */
 export const MAX_GENERATION_CONCEPTS = 8;
 
 /**
- * Claim and fully process one document: inputs -> fingerprint gate ->
- * provider generation -> clinical validation pipeline -> atomic RPC
- * persistence. Never throws for per-document problems; failures are recorded
- * on the row (question lifecycle only) so the queue keeps draining.
+ * Safety cap on concept batches run per claimed document per worker pass
+ * (spec Y: bounded, never unbounded generation). Combined with
+ * MAX_GENERATION_CONCEPTS this bounds the concept pool a single claim can
+ * ever draw from to MAX_GENERATION_CONCEPTS * MAX_GENERATION_BATCHES_PER_DOCUMENT.
+ */
+export const MAX_GENERATION_BATCHES_PER_DOCUMENT = 12;
+
+/**
+ * Stop issuing further batches once at least this many questions have been
+ * inserted for the document (close to "100 high-yield questions" per course
+ * once a document is fully covered by its concept pool - the explicit target
+ * this multi-batch loop exists to hit, spec Y/AD).
+ */
+export const TARGET_QUESTIONS_PER_DOCUMENT = 100;
+
+/**
+ * Circuit breaker: stop after this many consecutive batches insert zero
+ * questions (e.g. thin material, or a run of concepts validation keeps
+ * rejecting) rather than burning the whole batch cap on unproductive calls.
+ */
+export const MAX_CONSECUTIVE_EMPTY_BATCHES = 3;
+
+/** Split `items` into consecutive chunks of at most `size` each. */
+function chunkArray<T>(items: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+}
+
+/**
+ * Scope a batch's chunks to only those concept_sources actually links to its
+ * concepts, so one call's grounding stays focused on what it was asked to
+ * cover instead of the whole document (spec G). Concepts with no recorded
+ * link fall back to the full chunk set for the batch — evidence scoping is a
+ * focus improvement, never a reason to generate ungrounded.
+ */
+function scopeChunksToConcepts(
+  batchConcepts: readonly GenerationConcept[],
+  allChunks: readonly GenerationChunk[],
+  chunksByConcept: Record<string, string[]>
+): GenerationChunk[] {
+  const wantedChunkIds = new Set<string>();
+  let anyConceptLinked = false;
+  for (const concept of batchConcepts) {
+    const linkedIds = chunksByConcept[concept.key];
+    if (linkedIds && linkedIds.length > 0) {
+      anyConceptLinked = true;
+      for (const id of linkedIds) {
+        wantedChunkIds.add(id);
+      }
+    }
+  }
+  if (!anyConceptLinked) {
+    return [...allChunks];
+  }
+  const scoped = allChunks.filter((chunk) => wantedChunkIds.has(chunk.id));
+  return scoped.length > 0 ? scoped : [...allChunks];
+}
+
+/**
+ * Claim and fully process one document: inputs -> fingerprint gate -> one or
+ * more concept-batch rounds of (scoped provider generation -> clinical
+ * validation pipeline -> atomic RPC persistence) -> ready. Never throws for
+ * per-document problems; failures are recorded on the row (question
+ * lifecycle only) so the queue keeps draining.
  */
 export async function generateNextDocument(
   client: QuestionsClient,
@@ -121,11 +207,16 @@ export async function generateNextDocument(
     return { status: 'idle' };
   }
   try {
-    const { concepts, chunks } = await client.loadGenerationInputs(doc.id);
-    const selected = pickGenerationConcepts(concepts, MAX_GENERATION_CONCEPTS);
+    const { concepts, chunks, chunksByConcept } = await client.loadGenerationInputs(doc.id);
+    // Rank the full concept pool once; batches are consecutive slices of it
+    // so higher-emphasis concepts are always covered first (spec AA/Y).
+    const ranked = pickGenerationConcepts(
+      concepts,
+      MAX_GENERATION_CONCEPTS * MAX_GENERATION_BATCHES_PER_DOCUMENT
+    );
     const metadata = provider.metadata();
     const fingerprint = computeQuestionFingerprint(
-      selected.map((concept) => concept.key),
+      ranked.map((concept) => concept.key),
       chunks,
       metadata
     );
@@ -136,24 +227,48 @@ export async function generateNextDocument(
       return { status: 'skipped', documentId: doc.id };
     }
 
-    const generation = await provider.generate(selected, chunks);
-    // Generation is untrusted (spec L): every question passes the clinical
-    // validation pipeline BEFORE persistence. Rejections never reach the
-    // database; flagged questions land excluded from study (spec S).
-    const batch = validateGenerationBatch(generation.questions);
-    const result = await client.applyGeneration(
-      doc.id,
-      toQuestionRpcPayload(batch.accepted, chunks, metadata)
-    );
+    let inserted = 0;
+    let duplicates = 0;
+    let rejected = 0;
+    let flagged = 0;
+    let links = 0;
+    let batchesRun = 0;
+    let consecutiveEmptyBatches = 0;
+
+    for (const batchConcepts of chunkArray(ranked, MAX_GENERATION_CONCEPTS)) {
+      if (batchesRun >= MAX_GENERATION_BATCHES_PER_DOCUMENT) break;
+      if (inserted >= TARGET_QUESTIONS_PER_DOCUMENT) break;
+      if (consecutiveEmptyBatches >= MAX_CONSECUTIVE_EMPTY_BATCHES) break;
+
+      const scopedChunks = scopeChunksToConcepts(batchConcepts, chunks, chunksByConcept);
+      const generation = await provider.generate(batchConcepts, scopedChunks);
+      // Generation is untrusted (spec L): every question passes the clinical
+      // validation pipeline BEFORE persistence. Rejections never reach the
+      // database; flagged questions land excluded from study (spec S).
+      const validated = validateGenerationBatch(generation.questions);
+      const result = await client.applyGeneration(
+        doc.id,
+        toQuestionRpcPayload(validated.accepted, scopedChunks, metadata)
+      );
+      batchesRun += 1;
+      inserted += result.inserted;
+      duplicates += result.skipped + validated.duplicatesRemoved;
+      rejected += validated.rejected.length;
+      flagged += validated.accepted.filter((question) => question.status === 'flagged').length;
+      links += result.links;
+      consecutiveEmptyBatches = result.inserted === 0 ? consecutiveEmptyBatches + 1 : 0;
+    }
+
     await client.markQuestionsReady(doc.id, fingerprint);
     return {
       status: 'generated',
       documentId: doc.id,
-      inserted: result.inserted,
-      duplicates: result.skipped + batch.duplicatesRemoved,
-      rejected: batch.rejected.length,
-      flagged: batch.accepted.filter((question) => question.status === 'flagged').length,
-      links: result.links,
+      inserted,
+      duplicates,
+      rejected,
+      flagged,
+      links,
+      batches: batchesRun,
     };
   } catch (error) {
     const detail = errorMessage(error);

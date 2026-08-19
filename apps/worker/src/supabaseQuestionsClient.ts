@@ -70,10 +70,15 @@ export function createSupabaseQuestionsClient(client: SupabaseClient): Questions
     },
 
     async loadGenerationInputs(documentId: string): Promise<GenerationInputs> {
-      // Concepts evidenced in THIS document (via concept_sources), active only.
+      // Concepts evidenced in THIS document (via concept_sources), active
+      // only, plus the exact chunk_id each row links so generation batches
+      // can be scoped to their concepts' actual evidence instead of the
+      // whole document.
       const { data: conceptRows, error: conceptError } = await client
         .from('concept_sources')
-        .select('chunk_id, concepts (normalized_key, canonical_name, concept_type, emphasis_score, status)')
+        .select(
+          'chunk_id, concepts (normalized_key, canonical_name, concept_type, emphasis_score, status)'
+        )
         .eq('document_id', documentId);
       if (conceptError) throw conceptError;
       const byKey = new Map<string, GenerationConcept>();

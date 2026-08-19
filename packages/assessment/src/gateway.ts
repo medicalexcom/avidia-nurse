@@ -277,8 +277,18 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
           return content;
         }
       }
+      // The status code alone ("other") is not enough to diagnose a live
+      // failure — OpenAI's error body names the actual cause (bad request,
+      // auth, model access). Safe to log: it's OpenAI's own response, never
+      // our secret key or student content beyond what we already sent.
+      let bodySnippet = '';
+      try {
+        bodySnippet = (await response.text()).slice(0, 500);
+      } catch {
+        // best-effort only
+      }
       lastError = new QuestionGenerationFailedError(
-        `generation request failed with status ${response.status}`,
+        `generation request failed with status ${response.status}${bodySnippet ? `: ${bodySnippet}` : ''}`,
         response.status
       );
       if (response.status === 429 || response.status >= 500) {

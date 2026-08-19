@@ -237,7 +237,12 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
           },
           body: JSON.stringify({
             model: this.model,
-            temperature: 0,
+            // No `temperature` override: the routed ECONOMY/STANDARD/ADVANCED
+            // chat models (gpt-5.6 family) are reasoning models that only
+            // support their default temperature (1) — passing 0 (the old
+            // "deterministic" setting from pre-gpt-5.6 models) is rejected by
+            // the API with 400 unsupported_value. Determinism instead comes
+            // from the constrained JSON schema below plus validateGeneration.
             messages,
             response_format: {
               type: 'json_schema',

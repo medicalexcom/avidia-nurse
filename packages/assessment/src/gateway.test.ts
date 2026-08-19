@@ -35,7 +35,9 @@ describe('OpenAI question generation provider (M7 spec I/J/AE)', () => {
     );
     const result = await provider.generate(EVAL_GENERATION_CONCEPTS, EVAL_GENERATION_CHUNKS);
     expect(result.questions).toHaveLength(EVAL_GOOD_QUESTIONS.length);
-    expect(bodies[0]!.temperature).toBe(0);
+    // No temperature override — the routed chat models only support their
+    // default (reasoning-model APIs reject non-default values with 400).
+    expect(bodies[0]!.temperature).toBeUndefined();
     const format = bodies[0]!.response_format as {
       type: string;
       json_schema: { strict: boolean; name: string };

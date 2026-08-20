@@ -77,7 +77,9 @@ describe('OpenAIConceptExtractionProvider', () => {
     expect(headers.Authorization).toBe('Bearer secret-key');
     const body = JSON.parse(calls[0]!.init!.body as string);
     expect(body.model).toBe(OPENAI_CONCEPT_MODEL);
-    expect(body.temperature).toBe(0);
+    // No temperature override — the routed chat models only support their
+    // default (reasoning-model APIs reject non-default values with 400).
+    expect(body.temperature).toBeUndefined();
     expect(body.messages[0]).toEqual({
       role: 'system',
       content: CONCEPT_EXTRACTION_SYSTEM_PROMPT,

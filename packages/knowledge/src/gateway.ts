@@ -196,7 +196,12 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
           },
           body: JSON.stringify({
             model: this.model,
-            temperature: 0,
+            // No `temperature` override: the routed ECONOMY/STANDARD/ADVANCED
+            // chat models (gpt-5.6 family) are reasoning models that only
+            // support their default temperature (1) — passing 0 (the old
+            // "deterministic" setting from pre-gpt-5.6 models) is rejected by
+            // the API with 400 unsupported_value. Determinism instead comes
+            // from the constrained JSON schema below plus validateExtraction.
             messages,
             response_format: {
               type: 'json_schema',
@@ -231,8 +236,18 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
           return content;
         }
       }
+      // The status code alone ("other") is not enough to diagnose a live
+      // failure — OpenAI's error body names the actual cause (bad request,
+      // auth, model access). Safe to log: it's OpenAI's own response, never
+      // our secret key or student content beyond what we already sent.
+      let bodySnippet = '';
+      try {
+        bodySnippet = (await response.text()).slice(0, 500);
+      } catch {
+        // best-effort only
+      }
       lastError = new ConceptExtractionFailedError(
-        `extraction request failed with status ${response.status}`,
+        `extraction request failed with status ${response.status}${bodySnippet ? `: ${bodySnippet}` : ''}`,
         response.status
       );
       if (response.status === 429 || response.status >= 500) {

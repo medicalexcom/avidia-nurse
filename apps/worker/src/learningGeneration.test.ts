@@ -830,9 +830,15 @@ describe('question_set (no-upload question generation)', () => {
     chunk_indexes: [],
   });
 
-  function fetchSequence(bodies: unknown[]): typeof fetch {
+  function fetchSequence(
+    bodies: unknown[],
+    seenRequestBodies?: Array<{ messages: Array<{ content: string }>; response_format?: unknown }>
+  ): typeof fetch {
     let call = 0;
-    return jest.fn(async () => {
+    return jest.fn(async (_url: unknown, init: unknown) => {
+      if (seenRequestBodies) {
+        seenRequestBodies.push(JSON.parse((init as { body: string }).body));
+      }
       const content = bodies[Math.min(call, bodies.length - 1)];
       call += 1;
       return {
@@ -847,15 +853,33 @@ describe('question_set (no-upload question generation)', () => {
 
   it('proposes a syllabus concept list from the course title, then generates general-knowledge questions, when the course has no concepts yet', async () => {
     const originalFetch = global.fetch;
-    global.fetch = fetchSequence([
-      {
-        concepts: [
-          { name: 'Diabetic Ketoacidosis', type: 'disease_disorder', summary: 'DKA overview' },
-          { name: 'Heart Failure', type: 'disease_disorder' },
-        ],
-      },
-      { questions: [rawQuestion('diabetic ketoacidosis'), rawQuestion('heart failure')] },
-    ]);
+    // Regression test for the same live-only bug documented on the tutor
+    // suite above: OpenAI's response_format: { type: 'json_object' } is
+    // rejected with an HTTP 400 unless the literal word "json" appears
+    // somewhere in `messages`. The syllabus-concept and on-demand-question
+    // system prompts both use json_object mode (via openAiJson/
+    // generateValidated), so both request bodies below are asserted on
+    // directly — a mock that only returns canned content, and never
+    // inspects what was actually sent, let exactly this bug through once
+    // already (the on-demand-question prompt shipped without the word
+    // "json" anywhere in it, and every real request failed on both the
+    // primary and fallback model while this suite stayed green).
+    const seenRequestBodies: Array<{
+      messages: Array<{ content: string }>;
+      response_format?: unknown;
+    }> = [];
+    global.fetch = fetchSequence(
+      [
+        {
+          concepts: [
+            { name: 'Diabetic Ketoacidosis', type: 'disease_disorder', summary: 'DKA overview' },
+            { name: 'Heart Failure', type: 'disease_disorder' },
+          ],
+        },
+        { questions: [rawQuestion('diabetic ketoacidosis'), rawQuestion('heart failure')] },
+      ],
+      seenRequestBodies
+    );
     try {
       const applySyllabusConcepts = jest.fn(
         async (_courseId: string, _payload: Record<string, unknown>) => ({
@@ -915,6 +939,12 @@ describe('question_set (no-upload question generation)', () => {
         'r-qset-1',
         expect.objectContaining({ newConcepts: 2, questionsGenerated: 2, inserted: 2 })
       );
+      expect(seenRequestBodies).toHaveLength(2);
+      for (const body of seenRequestBodies) {
+        expect(body.response_format).toEqual({ type: 'json_object' });
+        const allText = body.messages.map((m) => m.content).join(' ');
+        expect(allText.toLowerCase()).toContain('json');
+      }
     } finally {
       global.fetch = originalFetch;
     }

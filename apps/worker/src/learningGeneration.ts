@@ -29,12 +29,6 @@ const SAFE_FAILURE =
   'Avidia could not create that right now. Your stored study tools still work; please try again.';
 const MAX_HISTORY = 10;
 const MAX_SOURCES = 8;
-const openAiTimeoutMs = (task: AiTask): number =>
-  task === 'SIMULATION_CASE_GENERATION'
-    ? 240_000
-    : task === 'CASE_STUDY_GENERATION'
-      ? 150_000
-      : 90_000; // SIMULATION_CASE_GENERATION is always ADVANCED with no fallback tier (tiers.ts) - 3 attempts x 240s = 12 min, safely under the worker job's 20-minute cap. CASE_STUDY_GENERATION can fall back STANDARD -> ADVANCED (6 attempts total), so it gets a smaller ceiling (6 x 150s = 15 min) to stay under that same cap - both timeouts confirmed against live worker run #254 (2026-08-18) and PR #5 review.
 
 /**
  * Requests stuck in 'processing' longer than this are considered stale.
@@ -396,6 +390,15 @@ const ONDEMAND_QUESTION_SYSTEM_PROMPT = [
   'You write NCLEX-style practice questions for a nursing student from general nursing knowledge —',
   'this course has no uploaded material yet, so there is nothing to cite. Never invent a course',
   'citation, and always return an empty chunk_indexes array for every question.',
+  // OpenAI's json_object response_format rejects the request with a 400
+  // unless the literal word "JSON" appears somewhere in the messages sent
+  // (see the identical gotcha and its comment on the tutor/RAG_ANSWER prompt
+  // below) — this line is required, not decorative.
+  'Respond with JSON of the form {"questions":[{"question_type":"...","stem":"...",',
+  '"difficulty":"...","cognitive_level":"...","concept_key":"...","priority_frameworks":[],',
+  '"rationale":"...","options":[{"text":"...","is_correct":true,"correct_position":null,',
+  '"rationale":"..."}],"expected_value":null,"tolerance":null,"answer_unit":null,',
+  '"rounding_note":null,"chunk_indexes":[]}]}.',
   'Write clinical reasoning questions, not vocabulary checks: put the client in a situation (vitals,',
   'labs, medications, symptoms) and ask what the nurse should do, assess, or prioritize. Never ask',
   '"what is <term>?".',
@@ -431,8 +434,7 @@ function taskForTutor(message: string): { task: AiTask; complexity: AiComplexity
 async function openAiJson(
   apiKey: string,
   choice: AiModelChoice,
-  messages: Array<{ role: string; content: string }>,
-  timeoutMs: number
+  messages: Array<{ role: string; content: string }>
 ): Promise<
   | { ok: true; value: unknown; usage?: { inputTokens: number; outputTokens: number } }
   | {
@@ -458,7 +460,7 @@ async function openAiJson(
         messages,
         response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(90_000),
     });
     if (!response.ok) {
       const reason =
@@ -539,7 +541,7 @@ async function generateValidated<T>(args: {
     executeAiTask({
       request: { task: args.task, complexity: args.complexity },
       env: args.env,
-      attempt: (choice) => openAiJson(args.apiKey, choice, messages, openAiTimeoutMs(args.task)),
+      attempt: (choice) => openAiJson(args.apiKey, choice, messages),
     });
   const first = await run([
     { role: 'system', content: args.system },
@@ -748,7 +750,7 @@ export async function processLearningRequest(
         task: 'SIMULATION_CASE_GENERATION',
         complexity: 'HIGH',
         env,
-        system: `Author a complete SimulationCaseDefinition JSON for Avidia M11 engineVersion 1. AI only authors this closed rulebook; runtime is deterministic. Prefer the numbered course sources when they are relevant; when absent or not relevant, author from general nursing knowledge instead and say so in the description — never fabricate a course citation. Include a fictional adult, valid physiologic values, controlled actions/rules, reachable terminating outcomes, critical/unsafe actions, scoring, and conceptMappings. Every conceptMappings[].conceptName must be exactly one of these (do not invent other names): ${selected.map((c) => c.name).join(', ') || '(none — omit conceptMappings)'}. Structural gotcha: "phases" must be a flat array of phase-id strings, e.g. ["triage","assessment","stabilization"] — never an object or a list of phase objects. "phaseFlow" is the separate field that maps each phase id to its array of legal next-phase ids, e.g. {"triage":["assessment"]}. Do not merge the two or turn "phases" into a keyed object. Every one of these top-level keys is required in the JSON and must be an array (use [] if genuinely empty, never omit the key): findings, labs, medicationOrders, actions, dialogue, statements, rules, outcomes, criticalActions, scoring, conceptMappings, debriefRecommendations. Return JSON only.`,
+        system: `Author a complete SimulationCaseDefinition JSON for Avidia M11 engineVersion 1. AI only authors this closed rulebook; runtime is deterministic. Prefer the numbered course sources when they are relevant; when absent or not relevant, author from general nursing knowledge instead and say so in the description — never fabricate a course citation. Include a fictional adult, valid physiologic values, controlled actions/rules, reachable terminating outcomes, critical/unsafe actions, scoring, and conceptMappings. Every conceptMappings[].conceptName must be exactly one of these (do not invent other names): ${selected.map((c) => c.name).join(', ') || '(none — omit conceptMappings)'}. Return JSON only.`,
         user: `${base}\nRequested difficulty: ${difficulty}. Source chunk ids available: ${sources.map((s) => s.chunk_id).join(', ')}.`,
         validate: (v) => {
           try {
@@ -762,12 +764,10 @@ export async function processLearningRequest(
             return errors.length
               ? { ok: false as const, errors }
               : { ok: true as const, value: def };
-          } catch (err) {
-            // validateCase() can throw a raw error on malformed model JSON instead of returning descriptive errors (confirmed live in worker run #257, 2026-08-18) - surface err.message so logs and the repair-retry prompt see the real problem, not a generic string.
-            const detail = err instanceof Error ? err.message : String(err);
+          } catch {
             return {
               ok: false as const,
-              errors: [`draft does not match the SimulationCaseDefinition schema: ${detail}`],
+              errors: ['draft does not match the SimulationCaseDefinition schema'],
             };
           }
         },

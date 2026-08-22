@@ -26,6 +26,7 @@ describe('routeAiTask — fixed-tier tasks', () => {
     ['CLINICAL_REASONING_EVALUATION', 'ADVANCED', null],
     ['SIMULATION_CASE_GENERATION', 'ADVANCED', null],
     ['SIMULATION_DIALOGUE', 'STANDARD', 'ADVANCED'],
+    ['SYLLABUS_CONCEPT_GENERATION', 'ECONOMY', 'STANDARD'],
   ] as const)('%s routes to %s with fallback %s', (task, expectedTier, expectedFallbackTier) => {
     const result = routeAiTask({ task, complexity: 'MEDIUM' }, ENV);
     expect(result.tier).toBe(expectedTier);

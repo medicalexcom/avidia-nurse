@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type LearningKind = 'case_study' | 'simulation' | 'tutor';
+export type LearningKind = 'case_study' | 'simulation' | 'tutor' | 'question_set';
 export type LearningStatus = 'queued' | 'processing' | 'ready' | 'failed';
 
 export interface LearningRequest {

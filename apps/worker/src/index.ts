@@ -30,6 +30,8 @@ import { createSupabaseWorkerClient, supabaseClientFromEnv } from './supabaseWor
 import {
   createSupabaseLearningGenerationClient,
   processLearningRequest,
+  type LearningGenerationClient,
+  STALE_LEARNING_MS,
 } from './learningGeneration';
 
 /**
@@ -76,7 +78,8 @@ async function sweepStale(
   client: WorkerClient,
   indexer: IndexerClient,
   knowledge: KnowledgeClient,
-  questions: QuestionsClient
+  questions: QuestionsClient,
+  learning: LearningGenerationClient
 ): Promise<void> {
   const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const recovered = await client.recoverStaleProcessing(staleBefore);
@@ -98,6 +101,11 @@ async function sweepStale(
   if (reGenerate > 0) {
     log(`requeued ${reGenerate} stale question-generation document(s)`);
   }
+  const staleLearningBefore = new Date(Date.now() - STALE_LEARNING_MS).toISOString();
+  const recoveredLearning = await learning.recoverStale(staleLearningBefore);
+  if (recoveredLearning > 0) {
+    log(`recovered ${recoveredLearning} stale personalized-learning request(s)`);
+  }
 }
 
 async function runOnce(
@@ -111,7 +119,7 @@ async function runOnce(
   learning: ReturnType<typeof createSupabaseLearningGenerationClient>,
   apiKey: string
 ): Promise<void> {
-  await sweepStale(client, indexer, knowledge, questions);
+  await sweepStale(client, indexer, knowledge, questions, learning);
   const outcomes = await drainQueue(client);
   for (const outcome of outcomes) {
     if (outcome.status === 'ready') {
@@ -195,9 +203,15 @@ async function runLoop(
     try {
       if (
         Date.now() - lastSweep >
-        Math.min(STALE_PROCESSING_MS, STALE_INDEXING_MS, STALE_KNOWLEDGE_MS, STALE_QUESTIONS_MS)
+        Math.min(
+          STALE_PROCESSING_MS,
+          STALE_INDEXING_MS,
+          STALE_KNOWLEDGE_MS,
+          STALE_QUESTIONS_MS,
+          STALE_LEARNING_MS
+        )
       ) {
-        await sweepStale(client, indexer, knowledge, questions);
+        await sweepStale(client, indexer, knowledge, questions, learning);
         lastSweep = Date.now();
       }
       const outcome = await processNextDocument(client);

@@ -11,6 +11,14 @@ import {
 } from '@avidia/ai-router';
 import { validateCase, type SimulationCaseDefinition } from '@avidia/simulation';
 import type { EmbeddingProvider, SourceLocator } from '@avidia/rag';
+import { isConceptType } from '@avidia/domain';
+import { isMeaninglessConceptName, normalizeConceptKey } from '@avidia/knowledge';
+import {
+  toQuestionRpcPayload,
+  validateGeneration,
+  validateGenerationBatch,
+  type QuestionGenerationMetadata,
+} from '@avidia/assessment';
 
 import { toVectorLiteral } from './supabaseIndexerClient';
 
@@ -27,6 +35,19 @@ const openAiTimeoutMs = (task: AiTask): number =>
     : task === 'CASE_STUDY_GENERATION'
       ? 150_000
       : 90_000; // SIMULATION_CASE_GENERATION is always ADVANCED with no fallback tier (tiers.ts) - 3 attempts x 240s = 12 min, safely under the worker job's 20-minute cap. CASE_STUDY_GENERATION can fall back STANDARD -> ADVANCED (6 attempts total), so it gets a smaller ceiling (6 x 150s = 15 min) to stay under that same cap - both timeouts confirmed against live worker run #254 (2026-08-18) and PR #5 review.
+
+/**
+ * Requests stuck in 'processing' longer than this are considered stale.
+ * claim_ai_learning_request() sets status='processing' and bumps `attempts`
+ * before processLearningRequest's try/catch even starts, so a hard kill
+ * (OOM, a CI job hitting its timeout mid-generation, the process crashing)
+ * between claim() and the catch's client.fail() leaves the row permanently
+ * invisible to claim() (`where status='queued'`) with no other stage's
+ * sweepStale to rescue it, unlike documents/indexing/knowledge/questions,
+ * which all have this same recovery already. Matches the sibling stages'
+ * 15-minute threshold (STALE_QUESTIONS_MS et al.).
+ */
+export const STALE_LEARNING_MS = 15 * 60 * 1000;
 
 // A retrieved chunk counts as genuinely SUPPORTING an answer only above this
 // cosine-similarity floor. search_course_chunks() is called with
@@ -54,10 +75,27 @@ export type GroundingMode = 'course_grounded' | 'mixed' | 'general_knowledge';
 const GENERIC_FOLLOWUP_RE =
   /^(go deeper\.?|simplify\.?|explain (?:this|that)\.?|give me an example\.?|why was i wrong\??)$/i;
 
-export type LearningRequestKind = 'case_study' | 'simulation' | 'tutor';
+export type LearningRequestKind = 'case_study' | 'simulation' | 'tutor' | 'question_set';
 export type TargetMode =
   'recommended' | 'upcoming_exam' | 'weakest' | 'topic' | 'surprise' | 'another';
 export type CaseDifficulty = 'foundational' | 'application' | 'advanced' | 'complex';
+
+/** Cap on concepts sent to a single on-demand generation call (cost control,
+ * matches MAX_GENERATION_CONCEPTS in questions.ts). */
+const MAX_ONDEMAND_CONCEPTS = 10;
+/** Bump when the syllabus-proposal prompt/schema changes. */
+export const SYLLABUS_CONCEPT_PROMPT_VERSION = 'p1';
+export const SYLLABUS_CONCEPT_VERSION = 'v1';
+/** Bump when the no-upload question prompt/schema changes. */
+export const ONDEMAND_QUESTION_PROMPT_VERSION = 'p1';
+export const ONDEMAND_QUESTION_GENERATION_VERSION = 'v1';
+
+/** Raw (schema-checked, not yet deduped/normalized) syllabus concept candidate. */
+export interface RawSyllabusConcept {
+  name: string;
+  type?: string;
+  summary?: string;
+}
 
 export interface LearningRequestRow {
   id: string;
@@ -120,6 +158,34 @@ export interface LearningGenerationClient {
   ): Promise<string>;
   complete(id: string, result: Record<string, unknown>): Promise<void>;
   fail(id: string, message: string): Promise<void>;
+  /**
+   * Reset requests stuck in 'processing' past the stale threshold: back to
+   * 'queued' (silent retry) while under the attempt budget, or a terminal
+   * 'failed' once it's exhausted — so a killed worker never leaves a request
+   * orphaned forever. Returns the number of rows recovered either way.
+   */
+  recoverStale(staleBeforeIso: string): Promise<number>;
+  /**
+   * Persist an LLM-proposed concept list for a course with no processed
+   * documents (no-upload fallback). Course-scoped via
+   * apply_syllabus_concepts — dedups against ANY existing concept (real or
+   * previously proposed) by normalized key, and is exempt from the
+   * document-evidence prune logic (a new origin, not 'ai').
+   */
+  applySyllabusConcepts(
+    courseId: string,
+    payload: Record<string, unknown>
+  ): Promise<{ concepts: Array<{ id: string; key: string; name: string }>; newConcepts: number }>;
+  /**
+   * Persist general-knowledge questions for a course with no document to
+   * attach chunk provenance to. Course-scoped via
+   * apply_ondemand_question_generation — same content-hash dedup as the
+   * document pipeline, minus anything document-specific.
+   */
+  applyOndemandQuestions(
+    courseId: string,
+    payload: Record<string, unknown>
+  ): Promise<{ inserted: number; skipped: number }>;
 }
 
 export function generationFingerprint(value: unknown): string {
@@ -224,6 +290,127 @@ export function validateCaseStudyDraft(
   }
   return errors.length ? { ok: false, errors } : { ok: true, value: draft as CaseStudyDraft };
 }
+
+const MAX_SYLLABUS_CONCEPTS = 15;
+
+/**
+ * Structural validation only (mirrors validateGeneration/validateExtraction's
+ * split of structure vs. judgment) — a syllabus concept candidate is
+ * meaningful/generic-filtered and deduplicated separately by
+ * refineSyllabusConcepts, using the same deterministic rules the document
+ * extraction pipeline uses (@avidia/knowledge normalize.ts), so "Nursing" or
+ * "Patient" can never land as a studyable concept either way.
+ */
+export function validateSyllabusConceptDraft(
+  value: unknown
+): { ok: true; value: RawSyllabusConcept[] } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ok: false, errors: ['response is not a JSON object'] };
+  }
+  const concepts = (value as { concepts?: unknown }).concepts;
+  if (!Array.isArray(concepts)) {
+    return { ok: false, errors: ['concepts must be an array'] };
+  }
+  if (concepts.length === 0) {
+    errors.push('concepts must include at least one topic');
+  }
+  if (concepts.length > MAX_SYLLABUS_CONCEPTS) {
+    errors.push(`too many concepts (${concepts.length} > ${MAX_SYLLABUS_CONCEPTS})`);
+  }
+  const checked: RawSyllabusConcept[] = [];
+  concepts.forEach((candidate, index) => {
+    if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+      errors.push(`concepts[${index}] is not an object`);
+      return;
+    }
+    const record = candidate as Record<string, unknown>;
+    if (typeof record.name !== 'string' || record.name.trim().length === 0) {
+      errors.push(`concepts[${index}].name must be a non-empty string`);
+      return;
+    }
+    if (record.type !== undefined && typeof record.type !== 'string') {
+      errors.push(`concepts[${index}].type must be a string when present`);
+    }
+    if (
+      record.summary !== undefined &&
+      (typeof record.summary !== 'string' || record.summary.length > 1000)
+    ) {
+      errors.push(`concepts[${index}].summary must be a string of at most 1000 characters`);
+    }
+    checked.push({
+      name: record.name,
+      type: typeof record.type === 'string' ? record.type : undefined,
+      summary: typeof record.summary === 'string' ? record.summary : undefined,
+    });
+  });
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, value: checked };
+}
+
+/**
+ * Deterministic filter + dedup for a syllabus proposal, reusing the exact
+ * same rules the document extraction pipeline uses (@avidia/knowledge
+ * refine.ts's normalizeConceptKey/isMeaninglessConceptName) so a course
+ * proposed from its title alone and a course extracted from real material
+ * converge on the same concept identity if the student later uploads
+ * something covering the same topic.
+ */
+export function refineSyllabusConcepts(
+  raw: readonly RawSyllabusConcept[]
+): Array<{ key: string; name: string; type: string; summary: string | null }> {
+  const byKey = new Map<
+    string,
+    { key: string; name: string; type: string; summary: string | null }
+  >();
+  for (const candidate of raw) {
+    const name = candidate.name.trim().replace(/\s+/g, ' ');
+    if (!name || isMeaninglessConceptName(name)) continue;
+    const key = normalizeConceptKey(name);
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      key,
+      name,
+      type:
+        candidate.type !== undefined && isConceptType(candidate.type) ? candidate.type : 'other',
+      summary: candidate.summary?.trim() || null,
+    });
+  }
+  return [...byKey.values()];
+}
+
+const SYLLABUS_CONCEPT_SYSTEM_PROMPT = [
+  'You propose a study topic list for a nursing student whose course has no uploaded material yet',
+  '(no-upload fallback: course material always supersedes this when it exists, but nothing has been',
+  'processed for this course so far). Given only a course title, propose the core clinical topics a',
+  'nursing curriculum with that title would cover, from general nursing education knowledge — never',
+  'claim this is grounded in any specific document. Propose 8-15 topics, specific enough to write',
+  'clinical questions about (not "Nursing" or "Patient Care").',
+  'Respond with JSON of the form {"concepts":[{"name":"...","type":"disease_disorder|',
+  'pathophysiology|sign_symptom|assessment|laboratory|diagnostic|medication|intervention|',
+  'nursing_priority|complication|risk_factor|procedure|safety|patient_education|',
+  'anatomy_physiology|calculation|other","summary":"one sentence, optional"}]}.',
+].join(' ');
+
+const ONDEMAND_QUESTION_SYSTEM_PROMPT = [
+  'You write NCLEX-style practice questions for a nursing student from general nursing knowledge —',
+  'this course has no uploaded material yet, so there is nothing to cite. Never invent a course',
+  'citation, and always return an empty chunk_indexes array for every question.',
+  'Write clinical reasoning questions, not vocabulary checks: put the client in a situation (vitals,',
+  'labs, medications, symptoms) and ask what the nurse should do, assess, or prioritize. Never ask',
+  '"what is <term>?".',
+  'Cite, for every question, the given key of its primary concept as concept_key.',
+  'Every question needs a rationale that teaches: why the correct answer is correct, and per-option',
+  'rationales for why each distractor is wrong.',
+  'Distractors must be plausible and clinically related; avoid "always", "never", "all of the above",',
+  'and do not make the correct option the longest one.',
+  'single_best_answer has exactly one correct option. multiple_response has two or more correct',
+  'options by design. ordered_response options carry correct_position 1..n. numeric_calculation has',
+  'NO options: provide the exact expected_value, a tolerance, the unit, and a rounding note;',
+  'double-check the arithmetic. Set fields that do not apply to null.',
+  'Vary difficulty (easy/moderate/hard) and cognitive level; tag nursing priority frameworks (abc,',
+  'safety, ...) when the question involves prioritization.',
+].join(' ');
 
 export function blocksActiveSimulationDisclosure(message: string): boolean {
   return /hidden findings?|correct next action|how (?:do|can) i win|critical actions?|scoring conditions?|future events?/i.test(
@@ -393,6 +580,91 @@ export async function processLearningRequest(
   if (!row) return 'idle';
   try {
     const context = await client.loadContext(row);
+
+    if (row.kind === 'question_set') {
+      // No-upload fallback (spec: "course material or any upload supersedes
+      // LLM, but if no uploads, use the course name and LLM to study,
+      // generate questions... as needed"). Deliberately skips the
+      // retrieval/grounding machinery every other kind uses below — this
+      // kind exists specifically for a course with nothing to retrieve, and
+      // always answers from general nursing knowledge, honestly labeled,
+      // never claiming course evidence it doesn't have. If the course
+      // already has concepts (real, document-extracted ones take priority
+      // simply by already existing here), those are reused as-is instead of
+      // proposing a redundant syllabus.
+      let concepts = context.concepts;
+      let newConceptCount = 0;
+      if (concepts.length === 0) {
+        const proposed = await generateValidated<RawSyllabusConcept[]>({
+          apiKey,
+          task: 'SYLLABUS_CONCEPT_GENERATION',
+          complexity: 'MEDIUM',
+          env,
+          system: SYLLABUS_CONCEPT_SYSTEM_PROMPT,
+          user:
+            `Course: ${context.courseTitle}\nPropose the core topics an ABSN nursing student would ` +
+            'need to study for this course, based on its title alone — no course material has been ' +
+            'uploaded yet.',
+          validate: validateSyllabusConceptDraft,
+        });
+        const refined = refineSyllabusConcepts(proposed.value);
+        if (refined.length === 0) {
+          throw new Error('no usable topics could be proposed from the course title');
+        }
+        const persisted = await client.applySyllabusConcepts(row.course_id, {
+          extraction: {
+            provider: 'openai',
+            model: proposed.choice.model,
+            prompt_version: SYLLABUS_CONCEPT_PROMPT_VERSION,
+            extraction_version: SYLLABUS_CONCEPT_VERSION,
+          },
+          concepts: refined,
+        });
+        concepts = persisted.concepts.map((c) => ({ id: c.id, name: c.name, mastery: null }));
+        newConceptCount = persisted.newConcepts;
+      }
+
+      const selectedConcepts = concepts.slice(0, MAX_ONDEMAND_CONCEPTS);
+      const conceptEntries = selectedConcepts.map((c) => ({
+        name: c.name,
+        key: normalizeConceptKey(c.name),
+      }));
+      const generated = await generateValidated({
+        apiKey,
+        task: 'QUESTION_GENERATION_ROUTINE',
+        complexity: 'MEDIUM',
+        env,
+        system: ONDEMAND_QUESTION_SYSTEM_PROMPT,
+        user:
+          `Course: ${context.courseTitle}\nConcepts to cover (use the given key as concept_key):\n` +
+          `${conceptEntries.map((c) => `- ${c.name} (key: ${c.key})`).join('\n')}\n\n` +
+          'Write 1-2 questions per concept from general nursing knowledge, mixing question types, ' +
+          'difficulties and cognitive levels. No course material excerpts are available for this ' +
+          'course — never cite any, and leave chunk_indexes empty for every question.',
+        validate: (v) => validateGeneration(v, 0),
+      });
+      const batch = validateGenerationBatch(generated.value.questions);
+      const metadata: QuestionGenerationMetadata = {
+        provider: 'openai',
+        model: generated.choice.model,
+        promptVersion: ONDEMAND_QUESTION_PROMPT_VERSION,
+        generationVersion: ONDEMAND_QUESTION_GENERATION_VERSION,
+      };
+      const applied = await client.applyOndemandQuestions(
+        row.course_id,
+        toQuestionRpcPayload(batch.accepted, [], metadata) as unknown as Record<string, unknown>
+      );
+      await client.complete(row.id, {
+        newConcepts: newConceptCount,
+        conceptsUsed: selectedConcepts.length,
+        questionsGenerated: batch.accepted.length,
+        inserted: applied.inserted,
+        skipped: applied.skipped,
+        rejected: batch.rejected.length,
+      });
+      return 'ready';
+    }
+
     const mode = String(row.request.mode ?? 'recommended') as TargetMode;
     const difficulty = String(row.request.difficulty ?? 'application') as CaseDifficulty;
     const selected = selectPersonalization(mode, context.concepts, String(row.request.topic ?? ''));
@@ -954,6 +1226,62 @@ export function createSupabaseLearningGenerationClient(
         })
         .eq('id', id);
       if (error) throw error;
+    },
+
+    async recoverStale(staleBeforeIso) {
+      // Under the attempt budget: back to 'queued' for a silent retry next
+      // cycle, same convention as the document pipeline's recoverStaleX
+      // (no student action needed — this is worker plumbing, not a
+      // clinical failure). `attempts` was already bumped by
+      // claim_ai_learning_request() before the crash, so the budget is
+      // still enforced on the retry.
+      const { data: requeued, error: requeueError } = await supabase
+        .from('ai_learning_requests')
+        .update({ status: 'queued' })
+        .eq('status', 'processing')
+        .lt('attempts', 3)
+        .lt('updated_at', staleBeforeIso)
+        .select('id');
+      if (requeueError) throw requeueError;
+      // Budget exhausted: a fourth silent retry would just loop forever, so
+      // this is a terminal, honestly-labeled failure instead of another
+      // requeue — the student sees SAFE_FAILURE rather than "Creating…"
+      // hanging indefinitely.
+      const { data: failed, error: failError } = await supabase
+        .from('ai_learning_requests')
+        .update({
+          status: 'failed',
+          error_message: SAFE_FAILURE,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('status', 'processing')
+        .gte('attempts', 3)
+        .lt('updated_at', staleBeforeIso)
+        .select('id');
+      if (failError) throw failError;
+      return (requeued ?? []).length + (failed ?? []).length;
+    },
+
+    async applySyllabusConcepts(courseId, payload) {
+      const { data, error } = await supabase.rpc('apply_syllabus_concepts', {
+        p_course_id: courseId,
+        p_payload: payload,
+      });
+      if (error) throw error;
+      const result = data as {
+        concepts: Array<{ id: string; key: string; name: string }>;
+        new_concepts: number;
+      };
+      return { concepts: result.concepts, newConcepts: result.new_concepts };
+    },
+
+    async applyOndemandQuestions(courseId, payload) {
+      const { data, error } = await supabase.rpc('apply_ondemand_question_generation', {
+        p_course_id: courseId,
+        p_payload: payload,
+      });
+      if (error) throw error;
+      return data as { inserted: number; skipped: number };
     },
   };
 }

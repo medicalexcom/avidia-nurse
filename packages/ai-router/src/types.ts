@@ -54,6 +54,11 @@ export const AI_TASKS = [
   'CASE_STUDY_GENERATION',
   'SIMULATION_CASE_GENERATION',
   'SIMULATION_DIALOGUE',
+  // Proposes a concept/topic list from a bare course title when a course has
+  // no processed documents yet (no-upload fallback, M7/M11 spec: "course
+  // material supersedes LLM, but if no uploads, use LLM"). High-volume,
+  // structured, validated downstream — same profile as CONCEPT_EXTRACTION.
+  'SYLLABUS_CONCEPT_GENERATION',
 ] as const;
 export type AiTask = (typeof AI_TASKS)[number];
 

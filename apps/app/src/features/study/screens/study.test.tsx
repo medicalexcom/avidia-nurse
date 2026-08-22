@@ -51,11 +51,16 @@ jest.mock('../studyApi', () => ({
   listCourseAttempts: jest.fn(),
   listCourseExams: jest.fn(),
 }));
+jest.mock('../../aiLearning/aiLearningApi', () => ({
+  listLearningRequests: jest.fn(),
+  requestLearningArtifact: jest.fn(),
+}));
 
 import * as coursesApi from '../../courses/coursesApi';
 import * as conceptsApi from '../../concepts/conceptsApi';
 import * as practiceApi from '../../practice/practiceApi';
 import * as studyApi from '../studyApi';
+import * as aiLearningApi from '../../aiLearning/aiLearningApi';
 
 const mocked = <T,>(fn: T) => fn as jest.Mock;
 
@@ -152,6 +157,7 @@ beforeEach(() => {
   mocked(studyApi.listConceptMastery).mockResolvedValue(masteryRows);
   mocked(studyApi.listCourseAttempts).mockResolvedValue(attempts);
   mocked(studyApi.listCourseExams).mockResolvedValue(exams);
+  mocked(aiLearningApi.listLearningRequests).mockResolvedValue([]);
 });
 
 describe('StudyDashboardScreen (spec AF)', () => {
@@ -198,6 +204,75 @@ describe('StudyDashboardScreen (spec AF)', () => {
     await screen.findByText(/No concepts to study yet/);
     expect(screen.queryByText('Start adaptive session')).toBeNull();
     expect(screen.getByText(/No upcoming exams/)).toBeTruthy();
+  });
+
+  describe('no-upload fallback (course name -> LLM concept list -> questions)', () => {
+    beforeEach(() => {
+      mocked(conceptsApi.listConcepts).mockResolvedValue([]);
+      mocked(practiceApi.listActiveQuestions).mockResolvedValue([]);
+      mocked(studyApi.listConceptMastery).mockResolvedValue([]);
+      mocked(studyApi.listCourseAttempts).mockResolvedValue([]);
+      mocked(studyApi.listCourseExams).mockResolvedValue([]);
+    });
+
+    it('offers to generate study questions from the course name when no concepts exist yet', async () => {
+      mocked(aiLearningApi.requestLearningArtifact).mockResolvedValue({
+        id: 'req-1',
+        kind: 'question_set',
+        status: 'queued',
+        request: {},
+        result: null,
+        error_message: null,
+        created_at: '2026-08-01T00:00:00.000Z',
+      });
+      await render(<StudyDashboardScreen courseId="course-1" />);
+      await screen.findByText('Generate study questions from course name');
+      await fireEvent.press(screen.getByText('Generate study questions from course name'));
+      expect(aiLearningApi.requestLearningArtifact).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        'course-1',
+        'question_set',
+        {}
+      );
+      await screen.findByText(/Avidia is building a study topic list/);
+    });
+
+    it('shows a pending state (and keeps polling) when a question_set request is already queued', async () => {
+      mocked(aiLearningApi.listLearningRequests).mockResolvedValue([
+        {
+          id: 'req-pending',
+          kind: 'question_set',
+          status: 'processing',
+          request: {},
+          result: null,
+          error_message: null,
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+      ]);
+      await render(<StudyDashboardScreen courseId="course-1" />);
+      await screen.findByText(/Avidia is building a study topic list/);
+      expect(screen.queryByText('Generate study questions from course name')).toBeNull();
+    });
+
+    it('shows a dismissible failure and lets the student try again', async () => {
+      mocked(aiLearningApi.listLearningRequests).mockResolvedValue([
+        {
+          id: 'req-failed',
+          kind: 'question_set',
+          status: 'failed',
+          request: {},
+          result: null,
+          error_message: 'Avidia could not create that right now.',
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+      ]);
+      await render(<StudyDashboardScreen courseId="course-1" />);
+      await screen.findByText(/Avidia could not generate study questions/);
+      await fireEvent.press(screen.getByText('Dismiss'));
+      expect(screen.queryByText(/Avidia could not generate study questions/)).toBeNull();
+      expect(screen.getByText('Generate study questions from course name')).toBeTruthy();
+    });
   });
 
   it('shows an error with retry when loading fails', async () => {

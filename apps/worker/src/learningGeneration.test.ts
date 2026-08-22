@@ -5,8 +5,10 @@ import {
   generationFingerprint,
   GROUNDING_SIMILARITY_FLOOR,
   processLearningRequest,
+  refineSyllabusConcepts,
   selectPersonalization,
   validateCaseStudyDraft,
+  validateSyllabusConceptDraft,
   type LearningGenerationClient,
 } from './learningGeneration';
 
@@ -131,6 +133,9 @@ describe('personalized learning generation', () => {
       storeSimulation: jest.fn(),
       storeTutor,
       enqueueHandoff: jest.fn(),
+      recoverStale: jest.fn(),
+      applySyllabusConcepts: jest.fn(),
+      applyOndemandQuestions: jest.fn(),
       complete,
       fail: jest.fn(),
     };
@@ -176,6 +181,9 @@ describe('personalized learning generation', () => {
       storeSimulation: jest.fn(),
       storeTutor,
       enqueueHandoff: jest.fn(),
+      recoverStale: jest.fn(),
+      applySyllabusConcepts: jest.fn(),
+      applyOndemandQuestions: jest.fn(),
       complete,
       fail: jest.fn(),
     };
@@ -228,6 +236,9 @@ describe('personalized learning generation', () => {
         storeSimulation: jest.fn(),
         storeTutor,
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
         complete,
         fail,
       };
@@ -291,6 +302,9 @@ describe('personalized learning generation', () => {
         storeSimulation: jest.fn(),
         storeTutor: jest.fn(async () => ({ id: 'assistant' })),
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
         complete: jest.fn(),
         fail: jest.fn(),
       };
@@ -374,6 +388,9 @@ describe('personalized learning generation', () => {
         complete,
         fail,
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
       };
       expect(await processLearningRequest(client, {} as never, 'test-key', {})).toBe('ready');
       expect(fail).not.toHaveBeenCalled();
@@ -425,6 +442,9 @@ describe('personalized learning generation', () => {
         complete,
         fail,
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
       };
       expect(await processLearningRequest(client, {} as never, 'test-key', {})).toBe('failed');
       expect(complete).not.toHaveBeenCalled();
@@ -594,6 +614,9 @@ describe('personalized learning generation', () => {
         storeSimulation: jest.fn(),
         storeTutor,
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
         complete,
         fail,
       };
@@ -652,6 +675,9 @@ describe('personalized learning generation', () => {
         storeSimulation: jest.fn(),
         storeTutor: jest.fn(async () => ({ id: 'assistant' })),
         enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts: jest.fn(),
+        applyOndemandQuestions: jest.fn(),
         complete: jest.fn(),
         fail: jest.fn(),
       };
@@ -691,6 +717,9 @@ describe('personalized learning generation', () => {
           storeSimulation: jest.fn(),
           storeTutor,
           enqueueHandoff: jest.fn(),
+          recoverStale: jest.fn(),
+          applySyllabusConcepts: jest.fn(),
+          applyOndemandQuestions: jest.fn(),
           complete,
           fail: jest.fn(),
         };
@@ -744,6 +773,9 @@ describe('personalized learning generation', () => {
           storeSimulation: jest.fn(),
           storeTutor,
           enqueueHandoff: jest.fn(),
+          recoverStale: jest.fn(),
+          applySyllabusConcepts: jest.fn(),
+          applyOndemandQuestions: jest.fn(),
           complete: jest.fn(),
           fail: jest.fn(),
         };
@@ -755,5 +787,253 @@ describe('personalized learning generation', () => {
         global.fetch = originalFetch;
       }
     });
+  });
+});
+
+describe('question_set (no-upload question generation)', () => {
+  // Matches @avidia/assessment's RawGeneratedQuestion schema exactly — chunk
+  // indexes are always empty here since chunkCount is 0 for this kind
+  // (nothing was ever retrieved to cite).
+  const rawQuestion = (conceptKey: string) => ({
+    question_type: 'single_best_answer',
+    stem: `The nurse is caring for a client with findings consistent with ${conceptKey}. What is the priority action?`,
+    difficulty: 'moderate',
+    cognitive_level: 'application',
+    concept_key: conceptKey,
+    priority_frameworks: ['safety'],
+    rationale:
+      'Verifying current status directs every subsequent intervention safely and correctly.',
+    options: [
+      {
+        text: 'Reassess the client now',
+        is_correct: true,
+        correct_position: null,
+        rationale: 'Correct: current data first.',
+      },
+      {
+        text: 'Chart later in the shift',
+        is_correct: false,
+        correct_position: null,
+        rationale: 'Delays needed action.',
+      },
+      {
+        text: 'Ask a peer to check in an hour',
+        is_correct: false,
+        correct_position: null,
+        rationale: 'Not the nurse’s priority delegation.',
+      },
+    ],
+    expected_value: null,
+    tolerance: null,
+    answer_unit: null,
+    rounding_note: null,
+    chunk_indexes: [],
+  });
+
+  function fetchSequence(bodies: unknown[]): typeof fetch {
+    let call = 0;
+    return jest.fn(async () => {
+      const content = bodies[Math.min(call, bodies.length - 1)];
+      call += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(content) } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+  }
+
+  it('proposes a syllabus concept list from the course title, then generates general-knowledge questions, when the course has no concepts yet', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = fetchSequence([
+      {
+        concepts: [
+          { name: 'Diabetic Ketoacidosis', type: 'disease_disorder', summary: 'DKA overview' },
+          { name: 'Heart Failure', type: 'disease_disorder' },
+        ],
+      },
+      { questions: [rawQuestion('diabetic ketoacidosis'), rawQuestion('heart failure')] },
+    ]);
+    try {
+      const applySyllabusConcepts = jest.fn(
+        async (_courseId: string, _payload: Record<string, unknown>) => ({
+          concepts: [
+            { id: 'concept-1', key: 'diabetic ketoacidosis', name: 'Diabetic Ketoacidosis' },
+            { id: 'concept-2', key: 'heart failure', name: 'Heart Failure' },
+          ],
+          newConcepts: 2,
+        })
+      );
+      const applyOndemandQuestions = jest.fn(
+        async (_courseId: string, _payload: Record<string, unknown>) => ({
+          inserted: 2,
+          skipped: 0,
+        })
+      );
+      const complete = jest.fn();
+      const fail = jest.fn();
+      const client: LearningGenerationClient = {
+        claim: async () => ({
+          id: 'r-qset-1',
+          user_id: 'u1',
+          course_id: 'c1',
+          kind: 'question_set',
+          request: {},
+          fingerprint: null,
+        }),
+        loadContext: async () => ({
+          courseTitle: 'Med-Surg Nursing',
+          concepts: [],
+          history: [],
+          explicitContext: '',
+          upcomingExam: null,
+        }),
+        search: async () => [],
+        storeCase: jest.fn(),
+        storeSimulation: jest.fn(),
+        storeTutor: jest.fn(),
+        enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts,
+        applyOndemandQuestions,
+        complete,
+        fail,
+      };
+      const result = await processLearningRequest(client, {} as never, 'test-key', {});
+      expect(result).toBe('ready');
+      expect(fail).not.toHaveBeenCalled();
+      expect(applySyllabusConcepts).toHaveBeenCalledTimes(1);
+      const [courseId, payload] = applySyllabusConcepts.mock.calls[0]!;
+      expect(courseId).toBe('c1');
+      expect((payload as { concepts: unknown[] }).concepts).toHaveLength(2);
+      expect(applyOndemandQuestions).toHaveBeenCalledTimes(1);
+      const [, questionPayload] = applyOndemandQuestions.mock.calls[0]!;
+      expect((questionPayload as { questions: unknown[] }).questions).toHaveLength(2);
+      expect(complete).toHaveBeenCalledWith(
+        'r-qset-1',
+        expect.objectContaining({ newConcepts: 2, questionsGenerated: 2, inserted: 2 })
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('reuses existing concepts instead of proposing a new syllabus when the course already has some', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = fetchSequence([{ questions: [rawQuestion('oxygenation')] }]);
+    try {
+      const applySyllabusConcepts = jest.fn();
+      const applyOndemandQuestions = jest.fn(async () => ({ inserted: 1, skipped: 0 }));
+      const complete = jest.fn();
+      const client: LearningGenerationClient = {
+        claim: async () => ({
+          id: 'r-qset-2',
+          user_id: 'u1',
+          course_id: 'c1',
+          kind: 'question_set',
+          request: {},
+          fingerprint: null,
+        }),
+        loadContext: async () => ({
+          courseTitle: 'Adult Health',
+          concepts: [{ id: 'existing-1', name: 'Oxygenation', mastery: null }],
+          history: [],
+          explicitContext: '',
+          upcomingExam: null,
+        }),
+        search: async () => [],
+        storeCase: jest.fn(),
+        storeSimulation: jest.fn(),
+        storeTutor: jest.fn(),
+        enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts,
+        applyOndemandQuestions,
+        complete,
+        fail: jest.fn(),
+      };
+      const result = await processLearningRequest(client, {} as never, 'test-key', {});
+      expect(result).toBe('ready');
+      expect(applySyllabusConcepts).not.toHaveBeenCalled();
+      expect(applyOndemandQuestions).toHaveBeenCalledTimes(1);
+      expect(complete).toHaveBeenCalledWith(
+        'r-qset-2',
+        expect.objectContaining({ newConcepts: 0 })
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('fails safely instead of generating questions for an empty concept list when every proposed topic is meaningless', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = fetchSequence([
+      { concepts: [{ name: 'Nursing' }, { name: 'Patient Care' }] },
+      { concepts: [{ name: 'Nursing' }, { name: 'Patient Care' }] },
+    ]);
+    try {
+      const applySyllabusConcepts = jest.fn();
+      const applyOndemandQuestions = jest.fn();
+      const complete = jest.fn();
+      const fail = jest.fn();
+      const client: LearningGenerationClient = {
+        claim: async () => ({
+          id: 'r-qset-3',
+          user_id: 'u1',
+          course_id: 'c1',
+          kind: 'question_set',
+          request: {},
+          fingerprint: null,
+        }),
+        loadContext: async () => ({
+          courseTitle: 'Foundations',
+          concepts: [],
+          history: [],
+          explicitContext: '',
+          upcomingExam: null,
+        }),
+        search: async () => [],
+        storeCase: jest.fn(),
+        storeSimulation: jest.fn(),
+        storeTutor: jest.fn(),
+        enqueueHandoff: jest.fn(),
+        recoverStale: jest.fn(),
+        applySyllabusConcepts,
+        applyOndemandQuestions,
+        complete,
+        fail,
+      };
+      const result = await processLearningRequest(client, {} as never, 'test-key', {});
+      expect(result).toBe('failed');
+      expect(fail).toHaveBeenCalledWith('r-qset-3', expect.stringContaining('could not create'));
+      expect(applySyllabusConcepts).not.toHaveBeenCalled();
+      expect(applyOndemandQuestions).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('validateSyllabusConceptDraft rejects malformed shapes and accepts a well-formed proposal', () => {
+    expect(validateSyllabusConceptDraft({ concepts: [] }).ok).toBe(false);
+    expect(validateSyllabusConceptDraft({ concepts: [{ name: '' }] }).ok).toBe(false);
+    expect(validateSyllabusConceptDraft({ concepts: 'nope' }).ok).toBe(false);
+    const valid = validateSyllabusConceptDraft({
+      concepts: [{ name: 'Diabetic Ketoacidosis', type: 'disease_disorder', summary: 'overview' }],
+    });
+    expect(valid.ok).toBe(true);
+  });
+
+  it('refineSyllabusConcepts drops generic terms and dedupes by normalized key', () => {
+    const refined = refineSyllabusConcepts([
+      { name: 'Nursing' },
+      { name: 'Diabetic Ketoacidosis', type: 'disease_disorder' },
+      { name: 'DIABETIC   ketoacidosis' },
+      { name: 'Heart Failure', type: 'not_a_real_type' },
+    ]);
+    expect(refined.map((c) => c.name)).toEqual(['Diabetic Ketoacidosis', 'Heart Failure']);
+    expect(refined.find((c) => c.name === 'Heart Failure')?.type).toBe('other');
   });
 });

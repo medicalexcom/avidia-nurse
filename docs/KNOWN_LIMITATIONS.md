@@ -36,14 +36,24 @@ cover the later dynamic-generation requirements.
   an earlier section (`18`, cascade-delete coverage) had already deleted,
   so their owner/course `with_check` clause could never pass. Fixed in
   `scripts/authz-check.mjs` by giving that section its own course.
-- **Password reset requires a one-time Supabase dashboard step.** The app
-  code (`requestPasswordReset`/`updatePassword` in `AuthProvider.tsx`) is
-  complete, but Supabase rejects `resetPasswordForEmail`'s `redirectTo`
-  unless it's on the project's allow-list: Authentication → URL
-  Configuration → Redirect URLs. Add
-  `https://medicalexcom.github.io/avidia-nurse/reset-password` (production),
-  `http://localhost:8081/reset-password` (local dev), and, once the native
-  app is distributed, `avidianurse:///reset-password`.
+- **Password reset redirect URLs are now allow-listed** (2026-08-25).
+  Supabase rejects `resetPasswordForEmail`'s `redirectTo` unless it's on
+  the project's allow-list (Authentication → URL Configuration → Redirect
+  URLs); all three documented URLs are now added there:
+  `https://medicalexcom.github.io/avidia-nurse/reset-password`
+  (production), `http://localhost:8081/reset-password` (local dev), and
+  `avidianurse:///reset-password` (native, ready ahead of distribution).
+- **`health` edge function deployed** (2026-08-25), closing the last
+  Stage 1 edge-function gap — `content-review` was the only one live
+  before this. Verified with a direct call:
+  `{"status":"ok","database":"ok",...}` at
+  `https://ydfbmzgeavkwvnslawny.supabase.co/functions/v1/health`. Its
+  "Verify JWT" gateway setting was ON by default on deploy, which
+  contradicted the function's own design (no auth required, so it still
+  answers when auth itself is broken) — turned off and re-verified.
+  Billing edge functions (`create-checkout-session`,
+  `create-billing-portal-session`, `stripe-webhook`) remain undeployed;
+  they need live Stripe keys first (Stage 3 scope).
 - **Seed content not authored** — playbook target of 100–300 RN-reviewed
   questions and ~10 clinical cases for beta is editorial work, not code.
   One synthetic simulation case ships (migration 0012).

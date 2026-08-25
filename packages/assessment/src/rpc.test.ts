@@ -22,7 +22,7 @@ describe('RPC payload mapping (M7 spec G/J/Q)', () => {
     expect(payload.questions).toHaveLength(batch.accepted.length);
     const first = payload.questions[0]!;
     expect(first.content_hash).toBe(batch.accepted[0]!.contentHash);
-    expect(first.status).toBe('active');
+    expect(first.status).toBe('generated');
     // chunk_indexes resolve to the actual chunk UUIDs (spec Q).
     for (const question of payload.questions) {
       for (const chunkId of question.chunk_ids) {

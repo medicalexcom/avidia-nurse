@@ -13,6 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@avidia/analytics": "workspace:*",
     "@avidia/assessment": "workspace:*",
     "@avidia/config": "workspace:*",

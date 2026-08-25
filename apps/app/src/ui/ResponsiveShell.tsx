@@ -2,9 +2,10 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { NAV_DESTINATIONS, pickNavLayout } from './navLayout';
-import { colors, spacing } from './theme';
+import { colors, radius, sectionAccents, spacing } from './theme';
 
 /**
  * Authenticated application shell.
@@ -23,6 +24,7 @@ export function ResponsiveShell({ children }: { children: ReactNode }) {
 
   const items = NAV_DESTINATIONS.map((dest) => {
     const active = pathname === dest.href;
+    const accent = sectionAccents[dest.section].accent;
     return (
       <Pressable
         key={dest.href}
@@ -32,14 +34,19 @@ export function ResponsiveShell({ children }: { children: ReactNode }) {
         onPress={() => router.replace(dest.href)}
         style={[
           layout === 'sidebar' ? styles.sidebarItem : styles.tabItem,
-          active && (layout === 'sidebar' ? styles.sidebarItemActive : styles.tabItemActive),
+          active &&
+            (layout === 'sidebar' ? { backgroundColor: sectionAccents[dest.section].soft } : null),
         ]}
       >
-        <Text style={[styles.glyph, active && styles.glyphActive]}>{dest.glyph}</Text>
+        <Ionicons
+          name={active ? dest.iconActive : dest.icon}
+          size={layout === 'sidebar' ? 20 : 22}
+          color={active ? accent : colors.textMuted}
+        />
         <Text
           style={[
             layout === 'sidebar' ? styles.sidebarLabel : styles.tabLabel,
-            active && styles.labelActive,
+            active && [styles.labelActive, { color: accent }],
           ]}
         >
           {dest.label}
@@ -95,9 +102,8 @@ const styles = StyleSheet.create({
     gap: spacing(2),
     paddingVertical: spacing(2.5),
     paddingHorizontal: spacing(3),
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
-  sidebarItemActive: { backgroundColor: colors.badge },
   sidebarLabel: { fontSize: 15, color: colors.textMuted },
   tabBar: {
     flexDirection: 'row',
@@ -114,9 +120,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing(1),
     minHeight: 48,
   },
-  tabItemActive: {},
   tabLabel: { fontSize: 11, color: colors.textMuted },
-  glyph: { fontSize: 18, color: colors.textMuted },
-  glyphActive: { color: colors.primary },
-  labelActive: { color: colors.primary, fontWeight: '600' },
+  labelActive: { fontWeight: '600' },
 });

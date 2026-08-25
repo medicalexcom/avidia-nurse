@@ -6,6 +6,8 @@ export default function ProgressScreen() {
     <AnalyticsCoursePickerScreen
       title="Progress"
       description="Pick a course to see your mastery map, trends and exam readiness."
+      section="progress"
+      icon="trending-up-outline"
     />
   );
 }

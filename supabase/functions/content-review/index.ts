@@ -20,7 +20,7 @@
  *   { action: 'decide', question_id, decision?, edits? }
  */
 
-import { json, serviceClient } from '../_shared/http.ts';
+import { corsHeaders, json, serviceClient } from '../_shared/http.ts';
 import {
   DECISIONS,
   isDecision,
@@ -220,6 +220,11 @@ async function handleDecide(req: Request): Promise<Response> {
 }
 
 Deno.serve(async (req) => {
+  // The browser preflights every cross-origin POST with an OPTIONS request
+  // (the app is served from GitHub Pages, this function from *.supabase.co)
+  // — it must succeed with no auth/body work before the real request is
+  // even sent, or the browser blocks the actual call before it gets here.
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
   try {

@@ -59,6 +59,11 @@ export default function SignInScreen() {
         busy={busy}
         disabled={backendUnavailable || !email.trim() || !password}
       />
+      <Text style={styles.forgot}>
+        <Link href="/forgot-password" style={styles.link}>
+          Forgot your password?
+        </Link>
+      </Text>
       <Text style={styles.footer}>
         New to Avidia Nurse?{' '}
         <Link href="/sign-up" style={styles.link}>
@@ -72,6 +77,7 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   heading: { fontSize: 26, fontWeight: '700', color: colors.text, marginBottom: spacing(1) },
   sub: { fontSize: 15, color: colors.textMuted, marginBottom: spacing(5) },
-  footer: { marginTop: spacing(5), color: colors.textMuted, fontSize: 14, textAlign: 'center' },
+  forgot: { marginTop: spacing(3), fontSize: 14, textAlign: 'center' },
+  footer: { marginTop: spacing(2), color: colors.textMuted, fontSize: 14, textAlign: 'center' },
   link: { color: colors.primary, fontWeight: '600' },
 });

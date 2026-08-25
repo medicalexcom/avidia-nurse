@@ -12,12 +12,12 @@ const ordered = EVAL_GOOD_QUESTIONS[2]!;
 const calc = EVAL_GOOD_QUESTIONS[3]!;
 
 describe('validation pipeline — clean items (M7 spec K, quality eval spec AI)', () => {
-  it('accepts every well-formed fixture as ACTIVE with no flags', () => {
+  it('accepts every well-formed fixture as GENERATED with no flags', () => {
     for (const raw of EVAL_GOOD_QUESTIONS) {
       const result = validateGeneratedQuestion(raw);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.status).toBe('active');
+        expect(result.value.status).toBe('generated');
         expect(result.value.safetyFlags).toEqual([]);
       }
     }

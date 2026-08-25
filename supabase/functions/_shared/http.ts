@@ -11,6 +11,24 @@
  * `supabase secrets set` — NEVER EXPO_PUBLIC, never reach any client bundle.
  */
 
+/**
+ * Every browser call to an edge function is cross-origin (the app is served
+ * from GitHub Pages, the function from *.supabase.co), so the browser sends
+ * a CORS preflight (OPTIONS) before the real request. Without these headers
+ * on both the preflight response and the real one, the browser blocks the
+ * request before it ever reaches this function's logic — the caller sees a
+ * generic network failure, not a 401/403/whatever this function meant to
+ * return. Every function built on this helper must handle OPTIONS itself
+ * (see content-review/index.ts for the pattern); this only covers the
+ * headers, since the preflight short-circuit has to happen before any
+ * auth/body work.
+ */
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 /** Minimal service-role PostgREST client (no SDK dependency needed). */
 export function serviceClient() {
   const url = Deno.env.get('SUPABASE_URL');
@@ -86,6 +104,6 @@ export async function requireUser(req: Request): Promise<{ id: string; email: st
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders },
   });
 }

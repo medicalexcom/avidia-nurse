@@ -8,6 +8,8 @@ import {
   type Plan,
 } from '@avidia/entitlements';
 
+import { removeMaterialObjects } from '../materials/materialStorage';
+
 /**
  * Billing / entitlements client API — M14 (spec K/M/N/R/AW/AK/AL).
  *
@@ -139,14 +141,44 @@ export async function exportMyData(client: SupabaseClient): Promise<unknown> {
 export type DeleteAccountResult =
   { status: 'deleted' } | { status: 'active_subscription' } | { status: 'error'; message: string };
 
+/**
+ * Storage object cleanup can no longer happen inside delete_my_account()
+ * itself (Supabase rejects direct SQL deletes against storage.objects —
+ * migration 0022), so it happens here, client-side, in a specific order:
+ * list the caller's own document storage keys FIRST (read-only, safe
+ * regardless of outcome), then call the guarded RPC, and only remove those
+ * objects AFTER it succeeds. That ordering matters: if the RPC refuses
+ * (active subscription) or errors, nothing has been deleted yet — the
+ * guard stays authoritative and no file is destroyed on a blocked attempt.
+ */
 export async function deleteMyAccount(client: SupabaseClient): Promise<DeleteAccountResult> {
+  const { data: docs } = await client.from('documents').select('storage_key');
+  const storageKeys = ((docs ?? []) as Array<{ storage_key: string | null }>)
+    .map((doc) => doc.storage_key)
+    .filter((key): key is string => Boolean(key));
+
   const { error } = await client.rpc('delete_my_account');
-  if (!error) {
-    await clearEntitlementsCache();
-    return { status: 'deleted' };
+  if (error) {
+    if (typeof error.message === 'string' && error.message.includes('ACTIVE_SUBSCRIPTION')) {
+      return { status: 'active_subscription' };
+    }
+    return { status: 'error', message: 'Account deletion failed. Please try again.' };
   }
-  if (typeof error.message === 'string' && error.message.includes('ACTIVE_SUBSCRIPTION')) {
-    return { status: 'active_subscription' };
+
+  // Best-effort from here: the account and every DB row that referenced
+  // these objects are already gone, so a failure here can't be surfaced to
+  // (or retried by) a user who no longer has an account. Orphaned objects
+  // stay under the deleted owner's private storage path, unreachable by
+  // anyone else (storage policies are owner-scoped) — never a data leak,
+  // just a cleanup gap (docs/KNOWN_LIMITATIONS.md).
+  if (storageKeys.length > 0) {
+    try {
+      await removeMaterialObjects(client, storageKeys);
+    } catch {
+      // intentionally swallowed — see comment above.
+    }
   }
-  return { status: 'error', message: 'Account deletion failed. Please try again.' };
+
+  await clearEntitlementsCache();
+  return { status: 'deleted' };
 }

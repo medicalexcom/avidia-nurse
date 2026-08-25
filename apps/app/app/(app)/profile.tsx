@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { mapAuthError } from '../../src/features/auth/errors';
@@ -12,7 +13,13 @@ import {
 } from '../../src/features/profile/profileApi';
 import { AccountSection } from '../../src/features/billing/AccountSection';
 import { getSupabase } from '../../src/lib/supabase';
-import { ErrorBanner, Field, PrimaryButton, Screen } from '../../src/ui/components';
+import {
+  ErrorBanner,
+  Field,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+} from '../../src/ui/components';
 import { colors, spacing } from '../../src/ui/theme';
 
 const PROGRAM_LABELS: Record<ProgramType, string> = {
@@ -23,6 +30,7 @@ const PROGRAM_LABELS: Record<ProgramType, string> = {
 };
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, signOut } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [timezone, setTimezone] = useState('');
@@ -130,6 +138,16 @@ export default function ProfileScreen() {
 
       <AccountSection />
 
+      {profile?.role === 'reviewer' ? (
+        <View style={styles.card}>
+          <Text style={styles.label}>Content review</Text>
+          <Text style={[styles.muted, styles.reviewCopy]}>
+            Approve, edit, or reject generated and flagged questions before they reach students.
+          </Text>
+          <SecondaryButton label="Open review queue" onPress={() => router.push('/review')} />
+        </View>
+      ) : null}
+
       <Pressable accessibilityRole="button" onPress={onSignOut} style={styles.signOut}>
         <Text style={styles.signOutLabel}>Sign out</Text>
       </Pressable>
@@ -149,6 +167,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: spacing(1) },
   value: { fontSize: 15, color: colors.textMuted, marginBottom: spacing(3) },
   muted: { color: colors.textMuted, fontSize: 14 },
+  reviewCopy: { marginBottom: spacing(3) },
   notice: { color: '#15803d', fontSize: 14, marginBottom: spacing(3) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2), marginBottom: spacing(4) },
   chip: {

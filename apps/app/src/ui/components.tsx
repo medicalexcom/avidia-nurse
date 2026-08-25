@@ -9,13 +9,37 @@ import {
   View,
   type TextInputProps,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-import { colors, spacing } from './theme';
+import { colors, radius, sectionAccents, shadow, spacing, type, type SectionKey } from './theme';
 
-export function Screen({ title, children }: { title: string; children?: ReactNode }) {
+/**
+ * `section`/`icon` are optional: most screens still render a plain title.
+ * Passing them adds a colored icon chip beside it — used on the screens
+ * that used to be visually indistinguishable "pick a course" lists (Study,
+ * Weaknesses, Progress) so each reads as its own place.
+ */
+export function Screen({
+  title,
+  section,
+  icon,
+  children,
+}: {
+  title: string;
+  section?: SectionKey;
+  icon?: keyof typeof Ionicons.glyphMap;
+  children?: ReactNode;
+}) {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent}>
-      <Text style={styles.title}>{title}</Text>
+      {section && icon ? (
+        <View style={styles.screenHeading}>
+          <SectionIcon section={section} name={icon} size={22} />
+          <Text style={styles.screenHeadingTitle}>{title}</Text>
+        </View>
+      ) : (
+        <Text style={styles.title}>{title}</Text>
+      )}
       {children}
     </ScrollView>
   );
@@ -35,9 +59,7 @@ export function LoadingScreen({ label }: { label: string }) {
 export function PlaceholderScreen({ title, milestone }: { title: string; milestone: string }) {
   return (
     <Screen title={title}>
-      <View style={styles.badge}>
-        <Text style={styles.badgeText}>Not yet available</Text>
-      </View>
+      <Pill label="Not yet available" tone="neutral" style={styles.pillSpacer} />
       <Text style={styles.muted}>
         {title} is planned for a later milestone ({milestone}). Nothing here is functional yet —
         this destination only reserves its place in the app&apos;s navigation.
@@ -52,7 +74,7 @@ export function Field(props: TextInputProps & { label: string }) {
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={colors.textFaint}
         style={styles.input}
         accessibilityLabel={label}
         {...inputProps}
@@ -157,10 +179,102 @@ export function ErrorBanner({ message }: { message: string | null }) {
   );
 }
 
+/** Elevated content block — the one shared "card" surface for new screens. */
+export function Card({ children, style }: { children?: ReactNode; style?: object }) {
+  return <View style={[styles.card, style]}>{children}</View>;
+}
+
+type PillTone = 'neutral' | 'info' | 'good' | 'warn' | 'critical';
+
+const PILL_TONES: Record<PillTone, { bg: string; fg: string }> = {
+  neutral: { bg: colors.badge, fg: colors.badgeText },
+  info: { bg: sectionAccents.home.soft, fg: sectionAccents.home.accent },
+  good: { bg: colors.goodSoft, fg: colors.good },
+  warn: { bg: sectionAccents.weaknesses.soft, fg: sectionAccents.weaknesses.accent },
+  critical: { bg: colors.dangerSoft, fg: colors.danger },
+};
+
+/** Small status/label chip. Generalizes the old one-off "badge" style. */
+export function Pill({
+  label,
+  tone = 'neutral',
+  style,
+}: {
+  label: string;
+  tone?: PillTone;
+  style?: object;
+}) {
+  const t = PILL_TONES[tone];
+  return (
+    <View style={[styles.pill, { backgroundColor: t.bg }, style]}>
+      <Text style={[styles.pillText, { color: t.fg }]}>{label}</Text>
+    </View>
+  );
+}
+
+/** Circular tinted icon chip, colored by section accent. */
+export function SectionIcon({
+  section,
+  name,
+  size = 20,
+}: {
+  section: SectionKey;
+  name: keyof typeof Ionicons.glyphMap;
+  size?: number;
+}) {
+  const { accent, soft } = sectionAccents[section];
+  const box = size + 20;
+  return (
+    <View
+      style={[
+        styles.sectionIcon,
+        { backgroundColor: soft, width: box, height: box, borderRadius: box / 2 },
+      ]}
+    >
+      <Ionicons name={name} size={size} color={accent} />
+    </View>
+  );
+}
+
+/**
+ * One row in a "pick a course" list — used by Study, Weaknesses, and
+ * Progress, which all land on the same course-chooser shape. Colored by
+ * section so the same layout still reads as three different places.
+ */
+export function CourseListRow({
+  section,
+  icon,
+  title,
+  meta,
+  onPress,
+}: {
+  section: SectionKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  meta?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [styles.courseRow, pressed && styles.courseRowPressed]}
+    >
+      <SectionIcon section={section} name={icon} size={18} />
+      <View style={styles.courseRowText}>
+        <Text style={styles.courseRowTitle}>{title}</Text>
+        {meta ? <Text style={styles.courseRowMeta}>{meta}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   screenContent: { padding: spacing(6), maxWidth: 720, width: '100%', alignSelf: 'center' },
-  title: { fontSize: 24, fontWeight: '700', color: colors.text, marginBottom: spacing(4) },
+  title: { ...type.display, color: colors.text, marginBottom: spacing(4) },
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -169,22 +283,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   loadingLabel: { color: colors.textMuted, fontSize: 14 },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.badge,
-    borderRadius: 999,
-    paddingHorizontal: spacing(3),
-    paddingVertical: spacing(1),
-    marginBottom: spacing(3),
-  },
-  badgeText: { color: colors.badgeText, fontSize: 12, fontWeight: '600' },
   muted: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
   field: { marginBottom: spacing(4) },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: spacing(1.5) },
+  fieldLabel: { ...type.label, color: colors.text, marginBottom: spacing(1.5) },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing(3),
     paddingVertical: spacing(2.5),
@@ -193,7 +298,7 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: colors.primary,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     alignItems: 'center',
     paddingVertical: spacing(3),
     marginTop: spacing(2),
@@ -202,10 +307,10 @@ const styles = StyleSheet.create({
   buttonPressed: { backgroundColor: colors.primaryDark },
   buttonLabel: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
   errorBanner: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: colors.dangerSoft,
     borderColor: '#fecaca',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     padding: spacing(3),
     marginBottom: spacing(4),
   },
@@ -214,7 +319,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     alignItems: 'center',
     paddingVertical: spacing(2),
     paddingHorizontal: spacing(3),
@@ -226,11 +331,47 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffbeb',
     borderColor: '#fde68a',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     padding: spacing(3),
     marginVertical: spacing(2),
     gap: spacing(2),
   },
   confirmText: { color: colors.text, fontSize: 14, lineHeight: 20 },
   confirmActions: { flexDirection: 'row', gap: spacing(2), justifyContent: 'flex-end' },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing(4),
+    ...shadow.sm,
+  },
+  pill: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(1),
+  },
+  pillSpacer: { marginBottom: spacing(3) },
+  pillText: { ...type.caption, fontWeight: '600' },
+  sectionIcon: { alignItems: 'center', justifyContent: 'center' },
+  screenHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    marginBottom: spacing(5),
+  },
+  screenHeadingTitle: { ...type.title, color: colors.text, flex: 1 },
+  courseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing(3.5),
+    marginBottom: spacing(2.5),
+    ...shadow.sm,
+  },
+  courseRowPressed: { backgroundColor: colors.surfaceSunken },
+  courseRowText: { flex: 1, gap: 2 },
+  courseRowTitle: { ...type.heading, color: colors.text },
+  courseRowMeta: { ...type.caption, color: colors.textMuted },
 });

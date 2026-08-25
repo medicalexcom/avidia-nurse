@@ -11,15 +11,19 @@ import { computeQuestionContentHash, normalizeQuestionText } from './hash';
 import { RawGeneratedQuestion } from './schema';
 
 /**
- * Clinical validation pipeline (M7 spec K/L/N, ADR-0021).
+ * Clinical validation pipeline (M7 spec K/L/N, ADR-0021; review gate added
+ * 2026-08-25, see docs/architecture-decisions/ADR-0018-question-schema.md §4).
  *
  * Every structurally valid question from the generator is judged here BEFORE
  * persistence. Hard rule violations (wrong option counts, answer leakage,
  * missing deterministic math) REJECT the question — it never lands in the
- * database as usable. Softer quality/safety concerns FLAG the question: it is
- * persisted with status 'flagged' and its safety flags, excluded from study
- * sessions until review (spec S). Generation is treated as an untrusted
- * content source at every step (spec L).
+ * database as usable. Everything else that passes lands EXCLUDED from study
+ * sessions until a human reviewer approves it via the content-review tool
+ * (RLS only ever exposes status='active' to students): clean questions land
+ * 'generated' (routine review), and questions with quality/safety concerns
+ * land 'flagged' with their safety flags attached (priority review). Neither
+ * status is student-visible. Generation is treated as an untrusted content
+ * source at every step (spec L).
  */
 
 export interface ValidatedOption {
@@ -48,8 +52,12 @@ export interface ValidatedQuestion {
   roundingNote: string | null;
   chunkIndexes: number[];
   contentHash: string;
-  /** 'active' when clean; 'flagged' when carrying safety/quality warnings. */
-  status: 'active' | 'flagged';
+  /**
+   * 'generated' when clean (routine human review before going live);
+   * 'flagged' when carrying safety/quality warnings (priority review).
+   * Never 'active' here — only a reviewer's approval sets that.
+   */
+  status: 'generated' | 'flagged';
   safetyFlags: string[];
 }
 
@@ -163,7 +171,7 @@ export function validateGeneratedQuestion(raw: RawGeneratedQuestion): QuestionVa
   // Duplicate options make the interaction ambiguous (spec K).
   const normalizedOptionTexts = raw.options.map((option) => normalizeQuestionText(option.text));
   if (new Set(normalizedOptionTexts).size !== normalizedOptionTexts.length) {
-    reasons.push('options must be distinct');
+  reasons.push('options must be distinct');
   }
 
   // Answer leakage (spec K): the stem must not contain a correct option
@@ -244,7 +252,7 @@ export function validateGeneratedQuestion(raw: RawGeneratedQuestion): QuestionVa
         raw.stem,
         raw.options.map((option) => option.text)
       ),
-      status: flags.length > 0 ? 'flagged' : 'active',
+      status: flags.length > 0 ? 'flagged' : 'generated',
       safetyFlags: flags,
     },
   };

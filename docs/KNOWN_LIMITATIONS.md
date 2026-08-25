@@ -10,8 +10,24 @@ cover the later dynamic-generation requirements.
 
 - Supabase/OpenAI configuration may exist in the deployment environment, but
   repository source cannot prove secret values, migration state, or provider
-  access. Apply migrations through `0018`, run the authz harness and model
+  access. Apply migrations through `0022`, run the authz harness and model
   verification workflow, then complete the founder journey.
+- **CI's authz (RLS/IDOR) harness now runs live** (2026-08-25) — repo
+  secrets `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are
+  set, so `pnpm run test:authz` no longer SKIPs in CI. Its first live run
+  found two real gaps, both fixed here: migration `0018`'s column grants for
+  `ai_learning_requests`/`tutor_conversations`/`tutor_messages` were applied
+  to the live database without the INSERT/UPDATE column grants it specifies
+  (`0021` reapplies exactly those grants), and `delete_my_account()` deleted
+  `storage.objects` rows directly in SQL, which Supabase's storage engine no
+  longer permits — `0022` removes that statement; storage cleanup moves to
+  the client (`billingApi.ts`'s `deleteMyAccount`), which lists the caller's
+  storage keys, calls the RPC, and only removes those objects once it
+  succeeds (never on the guarded/blocked path). If that client-side cleanup
+  step never runs (app closed mid-flow, network failure), the objects are
+  orphaned under the deleted owner's private storage path — unreachable by
+  any other user, so this is a storage-cost cleanup gap, not a privacy or
+  correctness issue.
 - **Password reset requires a one-time Supabase dashboard step.** The app
   code (`requestPasswordReset`/`updatePassword` in `AuthProvider.tsx`) is
   complete, but Supabase rejects `resetPasswordForEmail`'s `redirectTo`

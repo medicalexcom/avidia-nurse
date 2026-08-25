@@ -15,19 +15,27 @@ cover the later dynamic-generation requirements.
 - **CI's authz (RLS/IDOR) harness now runs live** (2026-08-25) — repo
   secrets `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are
   set, so `pnpm run test:authz` no longer SKIPs in CI. Its first live run
-  found two real gaps, both fixed here: migration `0018`'s column grants for
-  `ai_learning_requests`/`tutor_conversations`/`tutor_messages` were applied
-  to the live database without the INSERT/UPDATE column grants it specifies
-  (`0021` reapplies exactly those grants), and `delete_my_account()` deleted
-  `storage.objects` rows directly in SQL, which Supabase's storage engine no
-  longer permits — `0022` removes that statement; storage cleanup moves to
-  the client (`billingApi.ts`'s `deleteMyAccount`), which lists the caller's
-  storage keys, calls the RPC, and only removes those objects once it
-  succeeds (never on the guarded/blocked path). If that client-side cleanup
-  step never runs (app closed mid-flow, network failure), the objects are
-  orphaned under the deleted owner's private storage path — unreachable by
-  any other user, so this is a storage-cost cleanup gap, not a privacy or
-  correctness issue.
+  found two real database gaps, both fixed here: migration `0018`'s column
+  grants for `ai_learning_requests`/`tutor_conversations`/`tutor_messages`
+  were applied to the live database without the INSERT/UPDATE column grants
+  it specifies (`0021` reapplies exactly those grants), and
+  `delete_my_account()` deleted `storage.objects` rows directly in SQL,
+  which Supabase's storage engine no longer permits — `0022` removes that
+  statement; storage cleanup moves to the client (`billingApi.ts`'s
+  `deleteMyAccount`), which lists the caller's storage keys, calls the RPC,
+  and only removes those objects once it succeeds (never on the
+  guarded/blocked path). If that client-side cleanup step never runs (app
+  closed mid-flow, network failure), the objects are orphaned under the
+  deleted owner's private storage path — unreachable by any other user, so
+  this is a storage-cost cleanup gap, not a privacy or correctness issue.
+  A third failure (the three "owner creates a tutor conversation" /
+  "owner writes own user tutor message" / "owner queues personalized
+  learning" checks) persisted after `0021`/`0022` were applied and
+  verified live; it turned out to be a bug in the harness script itself,
+  not the database — those three checks reused `courseId`, a course that
+  an earlier section (`18`, cascade-delete coverage) had already deleted,
+  so their owner/course `with_check` clause could never pass. Fixed in
+  `scripts/authz-check.mjs` by giving that section its own course.
 - **Password reset requires a one-time Supabase dashboard step.** The app
   code (`requestPasswordReset`/`updatePassword` in `AuthProvider.tsx`) is
   complete, but Supabase rejects `resetPasswordForEmail`'s `redirectTo`

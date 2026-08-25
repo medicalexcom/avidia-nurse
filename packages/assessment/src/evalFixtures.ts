@@ -71,7 +71,8 @@ export const EVAL_GENERATION_CHUNKS: GenerationChunk[] = [
 ];
 
 /**
- * Raw generator output the pipeline must ACCEPT as clean 'active' questions:
+ * Raw generator output the pipeline must ACCEPT as clean 'generated'
+ * questions (held for routine human review, never straight to 'active'):
  * clinical reasoning stems (spec D), correct interaction shapes, teaching
  * rationales, plausible distractors.
  */

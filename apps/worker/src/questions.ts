@@ -244,7 +244,9 @@ export async function generateNextDocument(
       const generation = await provider.generate(batchConcepts, scopedChunks);
       // Generation is untrusted (spec L): every question passes the clinical
       // validation pipeline BEFORE persistence. Rejections never reach the
-      // database; flagged questions land excluded from study (spec S).
+      // database; every accepted question lands excluded from study —
+      // 'generated' or 'flagged' — until a human reviewer approves it via
+      // the content-review tool (spec S; review gate, ADR-0018 §4).
       const validated = validateGenerationBatch(generation.questions);
       const result = await client.applyGeneration(
         doc.id,

@@ -12,7 +12,13 @@
  * SUPABASE_SERVICE_ROLE_KEY) are function secrets set via
  * `supabase secrets set` — they are NEVER EXPO_PUBLIC and never reach any
  * client bundle (spec U).
+ *
+ * `json`/`requireUser`/`serviceClient` used to be defined here but are
+ * generic (not billing-specific) — they now live in ./http.ts, re-exported
+ * below so the existing billing functions' imports keep working unchanged.
  */
+
+export { json, requireUser, serviceClient } from './http.ts';
 
 /** Mirrors HANDLED_STRIPE_EVENTS in packages/entitlements/src/webhook.ts. */
 export const HANDLED_STRIPE_EVENTS = new Set([
@@ -116,65 +122,6 @@ function timingSafeEqual(a: string, b: string): boolean {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
-}
-
-/** Minimal service-role PostgREST client (no SDK dependency needed). */
-export function serviceClient() {
-  const url = Deno.env.get('SUPABASE_URL');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !serviceKey) throw new Error('missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
-  const headers = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-    'Content-Type': 'application/json',
-  };
-  return {
-    async select(table: string, query: string): Promise<unknown[]> {
-      const res = await fetch(`${url}/rest/v1/${table}?${query}`, { headers });
-      if (!res.ok) throw new Error(`select ${table} failed: ${res.status}`);
-      return await res.json();
-    },
-    async insert(table: string, row: Record<string, unknown>): Promise<Response> {
-      return await fetch(`${url}/rest/v1/${table}`, {
-        method: 'POST',
-        headers: { ...headers, Prefer: 'return=minimal' },
-        body: JSON.stringify(row),
-      });
-    },
-    async upsert(
-      table: string,
-      row: Record<string, unknown>,
-      onConflict: string
-    ): Promise<Response> {
-      return await fetch(`${url}/rest/v1/${table}?on_conflict=${onConflict}`, {
-        method: 'POST',
-        headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(row),
-      });
-    },
-  };
-}
-
-/** Resolve the calling user from the request's Authorization JWT. */
-export async function requireUser(req: Request): Promise<{ id: string; email: string | null }> {
-  const url = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const auth = req.headers.get('Authorization');
-  if (!url || !anonKey || !auth) throw new Error('unauthorized');
-  const res = await fetch(`${url}/auth/v1/user`, {
-    headers: { apikey: anonKey, Authorization: auth },
-  });
-  if (!res.ok) throw new Error('unauthorized');
-  const user = await res.json();
-  if (!user?.id) throw new Error('unauthorized');
-  return { id: user.id, email: user.email ?? null };
-}
-
-export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
 
 /** Call the Stripe REST API with form encoding (no SDK — keeps functions thin). */

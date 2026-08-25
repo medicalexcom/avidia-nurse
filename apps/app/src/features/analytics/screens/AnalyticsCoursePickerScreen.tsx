@@ -1,25 +1,33 @@
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import type { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { listOwnCourses, type CourseSummary } from '../../courses/coursesApi';
 import { getSupabase } from '../../../lib/supabase';
-import { ErrorBanner, Screen, SecondaryButton } from '../../../ui/components';
-import { colors, spacing } from '../../../ui/theme';
+import { CourseListRow, ErrorBanner, Screen, SecondaryButton } from '../../../ui/components';
+import { colors, spacing, type SectionKey } from '../../../ui/theme';
 
 /**
  * Shared chooser behind the "Progress" and "Weaknesses" tabs — M12 (spec
  * AG). Both tabs land on the same per-course analytics page (weaknesses are
  * its "Needs attention" section); analytics is always per-course, so these
  * top-level tabs only pick the course. Mirrors the M8 Study chooser exactly.
+ *
+ * `section`/`icon` give the two tabs distinct visual identities even though
+ * they share this one implementation.
  */
 export function AnalyticsCoursePickerScreen({
   title,
   description,
+  section,
+  icon,
 }: {
   title: string;
   description: string;
+  section: SectionKey;
+  icon: keyof typeof Ionicons.glyphMap;
 }) {
   const { user } = useAuth();
   const [courses, setCourses] = useState<CourseSummary[]>([]);
@@ -48,7 +56,7 @@ export function AnalyticsCoursePickerScreen({
   );
 
   return (
-    <Screen title={title}>
+    <Screen title={title} section={section} icon={icon}>
       <ErrorBanner message={error} />
       {error ? <SecondaryButton label="Retry" onPress={load} /> : null}
       {loading ? (
@@ -65,15 +73,14 @@ export function AnalyticsCoursePickerScreen({
         <>
           <Text style={styles.muted}>{description}</Text>
           {courses.map((course) => (
-            <Pressable
+            <CourseListRow
               key={course.id}
-              accessibilityRole="button"
+              section={section}
+              icon={icon}
+              title={course.title}
+              meta={course.term ?? undefined}
               onPress={() => router.push(`/course/${course.id}/analytics`)}
-              style={styles.courseRow}
-            >
-              <Text style={styles.courseTitle}>{course.title}</Text>
-              {course.term ? <Text style={styles.courseMeta}>{course.term}</Text> : null}
-            </Pressable>
+            />
           ))}
         </>
       )}
@@ -83,14 +90,4 @@ export function AnalyticsCoursePickerScreen({
 
 const styles = StyleSheet.create({
   muted: { color: colors.textMuted, marginBottom: spacing(4) },
-  courseRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: spacing(4),
-    marginBottom: spacing(2),
-  },
-  courseTitle: { color: colors.text, fontWeight: '600', fontSize: 16 },
-  courseMeta: { color: colors.textMuted, marginTop: spacing(1), fontSize: 13 },
 });

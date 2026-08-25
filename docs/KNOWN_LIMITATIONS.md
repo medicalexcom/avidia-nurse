@@ -23,6 +23,16 @@ cover the later dynamic-generation requirements.
 - **Seed content not authored** — playbook target of 100–300 RN-reviewed
   questions and ~10 clinical cases for beta is editorial work, not code.
   One synthetic simulation case ships (migration 0012).
+- **Content review requires two one-time Supabase dashboard steps.** The
+  `content-review` edge function and its screen (`app/(app)/review.tsx`)
+  are complete, but reaching them needs: (1) deploying the
+  `content-review` function — Edge Functions → Deploy new function, paste
+  `supabase/functions/content-review/index.ts` plus the two files it
+  imports from `_shared/` (no CLI needed, same as the other edge
+  functions); (2) granting reviewer access per person —
+  `update public.profiles set role = 'reviewer' where email = '...';` in
+  the SQL editor. There's no in-app way to grant this role, by design
+  (see `supabase/functions/_shared/review.ts`).
 
 ## Current limitations
 

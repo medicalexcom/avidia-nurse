@@ -42,6 +42,11 @@ jobs:
         env:
           EXPO_BASE_URL: /avidia-nurse
           EXPO_PUBLIC_APP_ENV: preview
+          # Public, non-secret — this deployment's own URL, per .env.example.
+          # Used to build the password-recovery redirect link (recoveryLink.ts);
+          # without it, resetPasswordForEmail can't recover this build's
+          # /avidia-nurse sub-path from window.location alone.
+          EXPO_PUBLIC_WEB_APP_URL: https://medicalexcom.github.io/avidia-nurse
           EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 

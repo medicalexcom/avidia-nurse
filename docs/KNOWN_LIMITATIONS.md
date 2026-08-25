@@ -43,30 +43,69 @@ cover the later dynamic-generation requirements.
   `https://medicalexcom.github.io/avidia-nurse/reset-password`
   (production), `http://localhost:8081/reset-password` (local dev), and
   `avidianurse:///reset-password` (native, ready ahead of distribution).
-- **`health` edge function deployed** (2026-08-25), closing the last
-  Stage 1 edge-function gap — `content-review` was the only one live
-  before this. Verified with a direct call:
-  `{"status":"ok","database":"ok",...}` at
-  `https://ydfbmzgeavkwvnslawny.supabase.co/functions/v1/health`. Its
-  "Verify JWT" gateway setting was ON by default on deploy, which
-  contradicted the function's own design (no auth required, so it still
-  answers when auth itself is broken) — turned off and re-verified.
-  Billing edge functions (`create-checkout-session`,
-  `create-billing-portal-session`, `stripe-webhook`) remain undeployed;
-  they need live Stripe keys first (Stage 3 scope).
+- **All 5 edge functions are now deployed** (2026-08-25): `content-review`,
+  `health`, `create-checkout-session`, `create-billing-portal-session`,
+  `stripe-webhook`. `health` verified with a direct call:
+  `{"status":"ok","database":"ok",...}`. Each function's "Verify JWT"
+  gateway setting was checked against its own design.
+  `create-checkout-session` and `create-billing-portal-session` correctly
+  need it ON (the app always sends a real user JWT) and were left as
+  deployed. `health` and `stripe-webhook` both need it OFF — `health`
+  must answer even when auth itself is broken, and Stripe cannot send a
+  Supabase JWT (`stripe-webhook`'s own code comment says so) — both
+  defaulted to ON on deploy and were corrected. `stripe-webhook` was
+  re-verified live afterward: `POST` with no signature →
+  `500 {"error":"not configured"}`, i.e. it was reached and evaluated,
+  not blocked at the gateway.
+  **Deploying the billing functions' code does not activate billing.**
+  They all correctly self-report "not configured" (503/500) because no
+  Stripe secrets exist yet. To actually activate Stripe test-mode
+  billing, Stage 3 needs, all from the founder (account creation, product
+  setup, and API-key/secret entry cannot be done by an assistant):
+  1. A Stripe account, in test mode, with a recurring PRO price created.
+  2. Edge function secrets set in Supabase (Project Settings → Edge
+     Functions → Secrets, or `supabase secrets set`):
+     `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_PRO`, `BILLING_RETURN_URL`
+     (for `create-checkout-session` / `create-billing-portal-session`),
+     and `STRIPE_WEBHOOK_SECRET` (for `stripe-webhook`, once the webhook
+     endpoint below exists — Stripe generates this secret per endpoint).
+  3. A Stripe test-mode webhook endpoint pointed at
+     `https://ydfbmzgeavkwvnslawny.supabase.co/functions/v1/stripe-webhook`,
+     subscribed to `checkout.session.completed`,
+     `customer.subscription.created/updated/deleted`, and
+     `invoice.payment_failed`.
+  4. The `subscriptions` feature flag flipped true (currently FALSE —
+     see `docs/worklogs/M14.md` for the flag mechanics).
+     Once those exist, the M14 24-step billing checklist
+     (`docs/worklogs/M14.md`) is what to run through.
 - **Seed content not authored** — playbook target of 100–300 RN-reviewed
   questions and ~10 clinical cases for beta is editorial work, not code.
   One synthetic simulation case ships (migration 0012).
-- **Content review requires two one-time Supabase dashboard steps.** The
-  `content-review` edge function and its screen (`app/(app)/review.tsx`)
-  are complete, but reaching them needs: (1) deploying the
-  `content-review` function — Edge Functions → Deploy new function, paste
-  `supabase/functions/content-review/index.ts` plus the two files it
-  imports from `_shared/` (no CLI needed, same as the other edge
-  functions); (2) granting reviewer access per person —
-  `update public.profiles set role = 'reviewer' where email = '...';` in
-  the SQL editor. There's no in-app way to grant this role, by design
-  (see `supabase/functions/_shared/review.ts`).
+- **Content review tool: already live, already usable (found + wired up
+  2026-08-25).** The `content-review` edge function and its screen
+  (`app/(app)/review.tsx`) were already deployed and complete before this
+  finding — CORS and the reviewer-auth gateway were live-verified directly
+  (`OPTIONS` preflight succeeds, unauthenticated `POST` correctly rejects at
+  the gateway). The founder's own account already has `role = 'reviewer'` —
+  nothing to grant. **Profile → "Open review queue"** works today.
+  What _wasn't_ true until today: the generation pipeline never actually
+  produced the `generated` status this tool is built to review — every
+  clean-passing AI question went straight to `active` (live to students,
+  unreviewed by anyone) the moment the automated validator approved it;
+  only the minority the validator itself flagged ever reached the queue.
+  Migration `0023` (staged, not yet applied — see below) plus a matching
+  code change to `packages/assessment/src/validate.ts` fix this: every
+  newly generated question now lands `generated` or `flagged`, never
+  `active`, and only a reviewer's approval through the tool sets it live.
+  **Action needed:** run `supabase/migrations/0023_generated_status_review_gate.sql`
+  in the SQL editor (three `CREATE OR REPLACE FUNCTION` statements — widens
+  the status allow-list on both generation RPCs and the two orphan-retirement
+  sweeps; no data is touched, nothing here can be run automatically per this
+  session's standing rule against executing schema changes directly).
+  The 116 questions already `active` in the live database were _not_
+  reviewed by anyone — they only passed the automated pipeline. This
+  migration doesn't touch them retroactively; whether to pull any of them
+  back for review is a separate decision, not something changed here.
 
 ## Current limitations
 

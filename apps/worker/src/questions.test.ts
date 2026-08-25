@@ -187,9 +187,10 @@ describe('generateNextDocument', () => {
       prompt_version: 'p2',
       generation_version: 'v2',
     });
-    // Every question is validated: status only ever active/flagged (spec J/S).
+    // Every question is validated: status only ever generated/flagged, never
+    // active straight out of generation (spec J/S; review gate ADR-0018 §4).
     for (const question of payload.questions) {
-      expect(['active', 'flagged']).toContain(question.status);
+      expect(['generated', 'flagged']).toContain(question.status);
       expect(question.content_hash).toMatch(/^[0-9a-f]{64}$/);
       // Provenance maps chunk indexes back to real source_chunks ids (spec Q).
       for (const chunkId of question.chunk_ids) {
@@ -255,7 +256,7 @@ describe('generateNextDocument', () => {
     }
     // The rejected question never reached the RPC payload.
     const persisted = client.applied[0]!.payload.questions;
-    expect(persisted.every((question) => ['active', 'flagged'].includes(question.status))).toBe(
+    expect(persisted.every((question) => ['generated', 'flagged'].includes(question.status))).toBe(
       true
     );
   });

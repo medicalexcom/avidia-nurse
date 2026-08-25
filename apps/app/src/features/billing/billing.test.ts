@@ -45,6 +45,26 @@ function rpcClient(data: unknown, error: { message: string } | null = null): Sup
   return { rpc: jest.fn(async () => ({ data, error })) } as unknown as SupabaseClient;
 }
 
+/**
+ * deleteMyAccount() also lists the caller's own document storage keys and,
+ * only after the RPC succeeds, removes them via the Storage API (spec AL —
+ * see the comment on deleteMyAccount for why that ordering matters).
+ */
+function deletionClient(options: {
+  docs?: Array<{ storage_key: string | null }>;
+  rpcError?: { message: string } | null;
+}): { client: SupabaseClient; removeMock: jest.Mock } {
+  const removeMock = jest.fn(async () => ({ error: null }));
+  const client = {
+    rpc: jest.fn(async () => ({ data: null, error: options.rpcError ?? null })),
+    from: jest.fn(() => ({
+      select: jest.fn(async () => ({ data: options.docs ?? [], error: null })),
+    })),
+    storage: { from: jest.fn(() => ({ remove: removeMock })) },
+  } as unknown as SupabaseClient;
+  return { client, removeMock };
+}
+
 function functionsClient(result: {
   data?: unknown;
   error?: { context?: { status?: number } } | null;
@@ -132,22 +152,36 @@ describe('store purchases stub (spec H/I/Q — case AY-H)', () => {
 });
 
 describe('account deletion guard (spec AL)', () => {
-  it('reports success and clears the entitlement cache', async () => {
+  it('reports success, removes the caller’s own storage objects, and clears the entitlement cache', async () => {
     await fetchEntitlements(rpcClient(payload));
-    const result = await deleteMyAccount(rpcClient(null));
+    const { client, removeMock } = deletionClient({
+      docs: [{ storage_key: 'u1/c1/d1/notes.pdf' }, { storage_key: null }],
+    });
+    const result = await deleteMyAccount(client);
     expect(result.status).toBe('deleted');
+    // The null storage_key (a document whose upload never completed) is
+    // filtered out rather than passed to the Storage API.
+    expect(removeMock).toHaveBeenCalledWith(['u1/c1/d1/notes.pdf']);
     expect(await readTrustedCache(new Date('2026-08-14T12:00:00Z'))).toBeNull();
   });
 
-  it('surfaces the active-subscription refusal distinctly', async () => {
-    const result = await deleteMyAccount(
-      rpcClient(null, { message: 'ACTIVE_SUBSCRIPTION: cancel your subscription first' })
-    );
+  it('surfaces the active-subscription refusal distinctly and never touches storage', async () => {
+    const { client, removeMock } = deletionClient({
+      docs: [{ storage_key: 'u1/c1/d1/notes.pdf' }],
+      rpcError: { message: 'ACTIVE_SUBSCRIPTION: cancel your subscription first' },
+    });
+    const result = await deleteMyAccount(client);
     expect(result.status).toBe('active_subscription');
+    expect(removeMock).not.toHaveBeenCalled();
   });
 
-  it('other failures become a retryable error, not a silent success', async () => {
-    const result = await deleteMyAccount(rpcClient(null, { message: 'network down' }));
+  it('other failures become a retryable error, not a silent success, and never touch storage', async () => {
+    const { client, removeMock } = deletionClient({
+      docs: [{ storage_key: 'u1/c1/d1/notes.pdf' }],
+      rpcError: { message: 'network down' },
+    });
+    const result = await deleteMyAccount(client);
     expect(result.status).toBe('error');
+    expect(removeMock).not.toHaveBeenCalled();
   });
 });

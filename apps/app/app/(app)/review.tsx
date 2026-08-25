@@ -11,4 +11,3 @@ import { ReviewQueueScreen } from '../../src/features/review/screens/ReviewQueue
 export default function ReviewRoute() {
   return <ReviewQueueScreen />;
 }
-

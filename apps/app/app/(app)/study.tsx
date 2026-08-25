@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { listOwnCourses, type CourseSummary } from '../../src/features/courses/coursesApi';
 import { getSupabase } from '../../src/lib/supabase';
-import { ErrorBanner, Screen, SecondaryButton } from '../../src/ui/components';
+import { CourseListRow, ErrorBanner, Screen, SecondaryButton } from '../../src/ui/components';
 import { colors, spacing } from '../../src/ui/theme';
 
 /**
@@ -41,7 +41,7 @@ export default function StudyScreen() {
   );
 
   return (
-    <Screen title="Study">
+    <Screen title="Study" section="study" icon="create-outline">
       <ErrorBanner message={error} />
       {error ? <SecondaryButton label="Retry" onPress={load} /> : null}
       {loading ? (
@@ -58,15 +58,14 @@ export default function StudyScreen() {
         <>
           <Text style={styles.muted}>Pick a course to see your study plan.</Text>
           {courses.map((course) => (
-            <Pressable
+            <CourseListRow
               key={course.id}
-              accessibilityRole="button"
+              section="study"
+              icon="create-outline"
+              title={course.title}
+              meta={course.term ?? undefined}
               onPress={() => router.push(`/course/${course.id}/study`)}
-              style={styles.courseRow}
-            >
-              <Text style={styles.courseTitle}>{course.title}</Text>
-              {course.term ? <Text style={styles.courseMeta}>{course.term}</Text> : null}
-            </Pressable>
+            />
           ))}
         </>
       )}
@@ -76,14 +75,4 @@ export default function StudyScreen() {
 
 const styles = StyleSheet.create({
   muted: { color: colors.textMuted, marginBottom: spacing(4) },
-  courseRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: spacing(4),
-    marginBottom: spacing(2),
-  },
-  courseTitle: { color: colors.text, fontWeight: '600', fontSize: 16 },
-  courseMeta: { color: colors.textMuted, marginTop: spacing(1), fontSize: 13 },
 });

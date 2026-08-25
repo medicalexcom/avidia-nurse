@@ -5,8 +5,10 @@ import { ValidatedQuestion } from './validate';
 /**
  * Mapping from validated questions to the apply_question_generation RPC
  * payload (M7 spec G/J/Q). The worker validates BEFORE persistence, so only
- * ValidatedQuestion values (status 'active' or 'flagged') ever reach here —
- * the database never sees malformed generation output (spec J).
+ * ValidatedQuestion values (status 'generated' or 'flagged') ever reach
+ * here — the database never sees malformed generation output (spec J), and
+ * neither status is student-visible until a reviewer approves the question
+ * (docs/architecture-decisions/ADR-0018-question-schema.md §4).
  */
 
 export interface QuestionRpcOption {
@@ -31,7 +33,7 @@ export interface QuestionRpcEntry {
   tolerance: number | null;
   answer_unit: string | null;
   rounding_note: string | null;
-  status: 'active' | 'flagged';
+  status: 'generated' | 'flagged';
   safety_flags: string[];
   options: QuestionRpcOption[];
   /** Chunk UUIDs resolved from the model's 0-based chunk_indexes (spec Q). */

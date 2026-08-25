@@ -105,12 +105,15 @@ export const QUESTION_SOURCE_TYPE_LABELS: Record<QuestionSourceType, string> = {
 };
 
 /**
- * Question lifecycle (spec S). The generation pipeline validates BEFORE
- * persistence, so rows land as 'active' (clean) or 'flagged' (usable-looking
- * but carrying safety/quality warnings — excluded from study sessions until
- * review). 'rejected' and 'retired' exist for auditability and future
- * curation; 'generated' is reserved for a future human-review workflow where
- * items persist before validation. Study sessions only ever see 'active'.
+ * Question lifecycle (spec S; review gate added 2026-08-25, see
+ * docs/architecture-decisions/ADR-0018-question-schema.md §4). The
+ * generation pipeline validates BEFORE persistence, so accepted rows land as
+ * 'generated' (clean, routine review) or 'flagged' (usable-looking but
+ * carrying safety/quality warnings, priority review) — never straight to
+ * 'active'. A reviewer's decision through the content-review tool is what
+ * moves a question to 'active' (approve) or 'rejected' (reject); 'retired'
+ * is a separate automated lifecycle state for evidence loss. Study sessions
+ * only ever see 'active'.
  */
 export const QUESTION_STATUSES = ['generated', 'active', 'flagged', 'rejected', 'retired'] as const;
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];

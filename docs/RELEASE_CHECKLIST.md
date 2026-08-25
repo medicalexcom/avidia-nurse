@@ -8,8 +8,8 @@ launch. Each item is a real step; nothing is assumed done.
 - [ ] Create the DEVELOPMENT Supabase project; apply migrations 0001–0015 in order.
 - [ ] Set `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` locally; sign up, create a course, confirm the shell works.
 - [ ] Configure the worker: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`; upload a PDF and watch it reach READY.
-- [ ] Add repo secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` so CI's authz job (71 sections) activates — it must pass.
-- [ ] Deploy edge functions (`health`, then billing ones when Stripe is set up); hit `health`.
+- [x] Add repo secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` so CI's authz job (71 sections) activates — it must pass. Done 2026-08-25; two live bugs it surfaced are fixed (`0021`, `0022`, `scripts/authz-check.mjs`) — CI is green, `All authorization checks passed.`
+- [x] Deploy edge functions (`health`, then billing ones when Stripe is set up); hit `health`. `health` deployed and hit 2026-08-25 (`{"status":"ok","database":"ok",...}`); billing functions remain undeployed pending Stripe setup (Stage 3).
 
 ## Stage 2 — Personal serious use (founder as student)
 

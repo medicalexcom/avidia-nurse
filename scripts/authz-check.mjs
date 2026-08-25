@@ -2618,9 +2618,29 @@ try {
   );
 
   // 71. Personalized AI learning + tutor rows are owner/course scoped.
+  //
+  // These checks need a course that still exists and is owned by A. The
+  // original `courseId` (created in section 2) no longer qualifies: section
+  // 18, above, deletes that exact course as part of its cascade-delete
+  // coverage. Reusing `courseId` here made every insert below fail its
+  // owner/course `with_check` (the `exists (select 1 from courses ...)`
+  // clause is never true for a deleted course) — a bug in this script, not
+  // in the grants or RLS policies it was pointing at. Use a fresh course
+  // scoped to A for this section instead.
+  const tutorCourse = await a.client
+    .from('courses')
+    .insert({ user_id: a.id, title: 'Tutor scope course' })
+    .select('id')
+    .single();
+  check(
+    'setup: course exists for tutor/personalized-learning checks',
+    !tutorCourse.error,
+    tutorCourse.error?.message
+  );
+  const tutorCourseId = tutorCourse.data?.id;
   const conversation = await a.client
     .from('tutor_conversations')
-    .insert({ user_id: a.id, course_id: courseId, title: 'Private tutor context' })
+    .insert({ user_id: a.id, course_id: tutorCourseId, title: 'Private tutor context' })
     .select('id')
     .single();
   check('owner creates a tutor conversation in own course', !conversation.error);
@@ -2644,13 +2664,13 @@ try {
   check("user B reads none of A's tutor messages", (bMessage.data ?? []).length === 0);
   const forgedConversation = await b.client.from('tutor_conversations').insert({
     user_id: b.id,
-    course_id: courseId,
+    course_id: tutorCourseId,
     title: 'Forged cross-course tutor',
   });
   check("user B cannot create a conversation in A's course", Boolean(forgedConversation.error));
   const learningRequest = await a.client.from('ai_learning_requests').insert({
     user_id: a.id,
-    course_id: courseId,
+    course_id: tutorCourseId,
     kind: 'case_study',
     request: { mode: 'recommended' },
   });
@@ -2658,7 +2678,7 @@ try {
   const bRequests = await b.client
     .from('ai_learning_requests')
     .select('id')
-    .eq('course_id', courseId);
+    .eq('course_id', tutorCourseId);
   check("user B reads none of A's learning requests", (bRequests.data ?? []).length === 0);
   const claimAttempt = await a.client.rpc('claim_ai_learning_request');
   check('client cannot claim the server-only learning queue', Boolean(claimAttempt.error));

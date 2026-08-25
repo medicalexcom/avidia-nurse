@@ -12,6 +12,14 @@ cover the later dynamic-generation requirements.
   repository source cannot prove secret values, migration state, or provider
   access. Apply migrations through `0018`, run the authz harness and model
   verification workflow, then complete the founder journey.
+- **Password reset requires a one-time Supabase dashboard step.** The app
+  code (`requestPasswordReset`/`updatePassword` in `AuthProvider.tsx`) is
+  complete, but Supabase rejects `resetPasswordForEmail`'s `redirectTo`
+  unless it's on the project's allow-list: Authentication → URL
+  Configuration → Redirect URLs. Add
+  `https://medicalexcom.github.io/avidia-nurse/reset-password` (production),
+  `http://localhost:8081/reset-password` (local dev), and, once the native
+  app is distributed, `avidianurse:///reset-password`.
 - **Seed content not authored** — playbook target of 100–300 RN-reviewed
   questions and ~10 clinical cases for beta is editorial work, not code.
   One synthetic simulation case ships (migration 0012).
@@ -27,9 +35,6 @@ cover the later dynamic-generation requirements.
 
 ## Product limitations (accepted for v1 beta)
 
-- **No password reset** (P2). A student who forgets their password needs
-  founder help via the Supabase dashboard. Add `resetPasswordForEmail`
-  before public launch.
 - **Store billing is an honest stub** (documented) — native purchase
   buttons say purchases aren't available in this build. Web Stripe
   billing is complete. Activation steps: `docs/worklogs/M14.md`.

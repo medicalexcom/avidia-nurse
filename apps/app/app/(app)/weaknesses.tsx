@@ -9,6 +9,8 @@ export default function WeaknessesScreen() {
     <AnalyticsCoursePickerScreen
       title="Weaknesses"
       description="Pick a course to see which concepts need attention and why."
+      section="weaknesses"
+      icon="flag-outline"
     />
   );
 }

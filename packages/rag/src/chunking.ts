@@ -118,7 +118,9 @@ function extractConceptTerms(text: string): string[] {
   const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
   terms.push(...matches);
   // Common medical terms we care about
-  const medicalTerms = text.match(/\b(syndrome|disease|disorder|metabolism|pathophysiology|mechanism|complication|symptom|sign|assessment|intervention|medication|drug|treatment|therapy|diagnosis|diagnostic|clinical|nurse|patient)\b/gi) || [];
+  const medicalTerms = text.match(
+    /\b(syndrome|disease|disorder|metabolism|pathophysiology|mechanism|complication|symptom|sign|assessment|intervention|medication|drug|treatment|therapy|diagnosis|diagnostic|clinical|nurse|patient)\b/gi
+  ) || [];
   terms.push(...medicalTerms);
   return [...new Set(terms)];
 }

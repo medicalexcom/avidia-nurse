@@ -1,6 +1,7 @@
 -- Migration: Add Bloom's cognitive level tracking for progressive learning
 -- Milestone: Skill #3 (Multi-Level Question Generation)
 -- Spec: Track cognitive levels and learning progression per question
+-- Corrected to match the repository schema: courses are referenced by id.
 
 BEGIN;
 
@@ -22,9 +23,9 @@ CREATE INDEX IF NOT EXISTS idx_questions_bloom_sequence
 CREATE TABLE IF NOT EXISTS public.bloom_progression (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  course_id UUID NOT NULL,
-  concept_id UUID NOT NULL,
-  
+  course_id UUID NOT NULL REFERENCES public.courses(id) ON DELETE CASCADE,
+  concept_id UUID NOT NULL REFERENCES public.concepts(id) ON DELETE CASCADE,
+
   -- Track mastery at each Bloom's level
   recall_mastery FLOAT DEFAULT 0,
   understanding_mastery FLOAT DEFAULT 0,
@@ -32,21 +33,19 @@ CREATE TABLE IF NOT EXISTS public.bloom_progression (
   analysis_mastery FLOAT DEFAULT 0,
   evaluation_mastery FLOAT DEFAULT 0,
   synthesis_mastery FLOAT DEFAULT 0,
-  
+
   -- Current level the student is studying
   current_level TEXT DEFAULT 'recall',
-  
+
   -- Progression tracking
   completed_foundational BOOLEAN DEFAULT FALSE,
   completed_intermediate BOOLEAN DEFAULT FALSE,
   completed_advanced BOOLEAN DEFAULT FALSE,
-  
+
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  UNIQUE(user_id, course_id, concept_id),
-  FOREIGN KEY(user_id, course_id) REFERENCES public.courses(owner_id, id) ON DELETE CASCADE,
-  FOREIGN KEY(course_id, concept_id) REFERENCES public.concepts(course_id, id) ON DELETE CASCADE
+
+  UNIQUE(user_id, course_id, concept_id)
 );
 
 -- RLS for bloom_progression
@@ -67,9 +66,6 @@ CREATE OR REPLACE FUNCTION public.update_bloom_progression(
   p_mastery_delta FLOAT
 )
 RETURNS void AS $$
-DECLARE
-  v_current_mastery FLOAT;
-  v_new_mastery FLOAT;
 BEGIN
   INSERT INTO public.bloom_progression (
     user_id, course_id, concept_id, current_level
@@ -115,6 +111,6 @@ BEGIN
     updated_at = NOW()
   WHERE user_id = p_user_id AND course_id = p_course_id AND concept_id = p_concept_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 COMMIT;

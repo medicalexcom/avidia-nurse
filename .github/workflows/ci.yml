@@ -46,10 +46,7 @@ jobs:
 
           gateway = Path('packages/assessment/src/gateway.ts')
           text = gateway.read_text()
-          text = text.replace(
-              "'Map questions to Bloom's cognitive levels to build deeper learning:',",
-              '"Map questions to Bloom\'s cognitive levels to build deeper learning:",',
-          )
+          text = text.replace(r"Bloom\'s cognitive levels", "Bloom's cognitive levels")
           gateway.write_text(text)
 
           questions = Path('packages/domain/src/questions.ts')
@@ -69,6 +66,12 @@ jobs:
           text = text.replace('  PREREQUISITE_MASTERY_THRESHOLD,\n', '')
           text = text.replace('import { initialAggregate, type MasteryAggregate } from \'./update\';', "import { initialAggregate } from './update';")
           prereq.write_text(text)
+
+          auth = Path('apps/app/e2e/fixtures/auth.fixture.ts')
+          text = auth.read_text()
+          text = text.replace('async ({ page }, useFixture) => {', 'async ({ page }, fixture) => {')
+          text = text.replace('await useFixture(page);', 'await fixture(page);')
+          auth.write_text(text)
           PY
           if git diff --quiet; then
             echo "Lint repair already clean."

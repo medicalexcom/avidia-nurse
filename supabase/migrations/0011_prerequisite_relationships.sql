@@ -1,12 +1,21 @@
 -- Migration: Add prerequisite relationship tracking for learning path scaffolding
 -- Milestone: M16 (Concept Prerequisites)
 -- Spec: Store prerequisite strength and flags for concept dependency gating
+--
+-- Current schema notes:
+--   courses uses user_id (not owner_id)
+--   concept_relationships uses source_concept_id (not source_id)
+--   concepts and concept_mastery are course-scoped, but their UUID ids are
+--   already primary keys, so simple FKs are sufficient here. Course ownership
+--   is enforced by RLS and the course_id relationship.
 
 BEGIN;
 
 -- ALTER concept_relationships to add prerequisite fields
 ALTER TABLE IF EXISTS public.concept_relationships
-ADD COLUMN IF NOT EXISTS prerequisite_strength INTEGER CHECK (prerequisite_strength IS NULL OR (prerequisite_strength >= 1 AND prerequisite_strength <= 10)),
+ADD COLUMN IF NOT EXISTS prerequisite_strength INTEGER CHECK (
+  prerequisite_strength IS NULL OR (prerequisite_strength >= 1 AND prerequisite_strength <= 10)
+),
 ADD COLUMN IF NOT EXISTS is_prerequisite BOOLEAN DEFAULT FALSE;
 
 -- Create indexes for faster prerequisite lookups
@@ -19,22 +28,18 @@ CREATE INDEX IF NOT EXISTS idx_concept_relationships_strength
   WHERE is_prerequisite = TRUE AND prerequisite_strength >= 8;
 
 -- Table to track prerequisite satisfaction per user
--- (materialized view of current mastery against prerequisites, for performance)
 CREATE TABLE IF NOT EXISTS public.prerequisite_satisfaction (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  course_id UUID NOT NULL,
-  concept_id UUID NOT NULL,
-  prerequisite_concept_id UUID NOT NULL,
+  course_id UUID NOT NULL REFERENCES public.courses(id) ON DELETE CASCADE,
+  concept_id UUID NOT NULL REFERENCES public.concepts(id) ON DELETE CASCADE,
+  prerequisite_concept_id UUID NOT NULL REFERENCES public.concepts(id) ON DELETE CASCADE,
   is_satisfied BOOLEAN DEFAULT FALSE,
   current_prerequisite_mastery FLOAT,
   last_checked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  UNIQUE(user_id, course_id, concept_id, prerequisite_concept_id),
-  FOREIGN KEY(user_id, course_id) REFERENCES public.courses(owner_id, id) ON DELETE CASCADE,
-  FOREIGN KEY(course_id, concept_id) REFERENCES public.concepts(course_id, id) ON DELETE CASCADE,
-  FOREIGN KEY(course_id, prerequisite_concept_id) REFERENCES public.concepts(course_id, id) ON DELETE CASCADE
+
+  UNIQUE(user_id, course_id, concept_id, prerequisite_concept_id)
 );
 
 -- RLS for prerequisite_satisfaction: users read/write only their own records
@@ -66,7 +71,7 @@ BEGIN
   LOOP
     -- For each prerequisite of this concept
     FOR v_prereq_rec IN
-      SELECT cr.source_id, cr.prerequisite_strength
+      SELECT cr.source_concept_id, cr.prerequisite_strength
       FROM public.concept_relationships cr
       WHERE cr.target_concept_id = v_concept_rec.concept_id
         AND cr.is_prerequisite = TRUE
@@ -75,7 +80,8 @@ BEGIN
       SELECT cm.mastery INTO v_prereq_mastery
       FROM public.concept_mastery cm
       WHERE cm.user_id = p_user_id
-        AND cm.concept_id = v_prereq_rec.source_id
+        AND cm.course_id = p_course_id
+        AND cm.concept_id = v_prereq_rec.source_concept_id
       LIMIT 1;
 
       -- Upsert satisfaction record
@@ -84,7 +90,7 @@ BEGIN
         is_satisfied, current_prerequisite_mastery, last_checked_at
       )
       VALUES (
-        p_user_id, p_course_id, v_concept_rec.concept_id, v_prereq_rec.source_id,
+        p_user_id, p_course_id, v_concept_rec.concept_id, v_prereq_rec.source_concept_id,
         COALESCE(v_prereq_mastery, 0) >= 0.7,
         COALESCE(v_prereq_mastery, 0),
         NOW()
@@ -97,7 +103,7 @@ BEGIN
     END LOOP;
   END LOOP;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Trigger to refresh prerequisite satisfaction after mastery updates
 CREATE OR REPLACE FUNCTION public.trigger_refresh_prerequisite_satisfaction()
@@ -106,7 +112,7 @@ BEGIN
   PERFORM public.refresh_prerequisite_satisfaction(NEW.user_id, NEW.course_id);
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS trg_refresh_prerequisites_on_mastery ON public.concept_mastery;
 CREATE TRIGGER trg_refresh_prerequisites_on_mastery

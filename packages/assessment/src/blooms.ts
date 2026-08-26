@@ -113,7 +113,9 @@ export function meetsLevelTargets(
   targetLevels: CognitiveLevel[],
   allowSecondary: boolean = true
 ): boolean {
-  return targetLevels.includes(questionLevel) || (allowSecondary && targetLevels.includes(questionLevel));
+  return (
+    targetLevels.includes(questionLevel) || (allowSecondary && targetLevels.includes(questionLevel))
+  );
 }
 
 /**
@@ -197,9 +199,7 @@ export function generateBlomsPromptSuffix(
     prioritization: 'prioritization (nursing-specific ordering and decision-making)',
   };
 
-  const levelList = levels
-    .map((l) => `- ${levelDescriptions[l] || l}`)
-    .join('\n');
+  const levelList = levels.map((l) => `- ${levelDescriptions[l] || l}`).join('\n');
 
   return (
     `\nCognitive Level Progression:\nGenerate at least ${minPerLevel} question(s) for EACH of these Bloom's levels:\n${levelList}\n` +

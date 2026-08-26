@@ -128,7 +128,9 @@ function CourseCard({ course, timezone }: { course: CourseSummary; timezone: str
     >
       <View style={styles.cardHeader}>
         <SectionIcon section="courses" name="book-outline" size={18} />
-        <Text testID={`course-title-${course.id}`} style={styles.cardTitle}>{course.title}</Text>
+        <Text testID={`course-title-${course.id}`} style={styles.cardTitle}>
+          {course.title}
+        </Text>
         {course.status === 'archived' ? <Pill label="Archived" tone="neutral" /> : null}
       </View>
       {course.term ? <Text style={styles.cardMeta}>{course.term}</Text> : null}
@@ -136,7 +138,10 @@ function CourseCard({ course, timezone }: { course: CourseSummary; timezone: str
         {course.module_count === 1 ? '1 module' : `${course.module_count} modules`}
       </Text>
       {next && countdown ? (
-        <Text testID={`exam-countdown-${course.id}`} style={[styles.cardCountdown, { color: accent }]}>
+        <Text
+          testID={`exam-countdown-${course.id}`}
+          style={[styles.cardCountdown, { color: accent }]}
+        >
           {next.title}: {countdown.label}
         </Text>
       ) : (

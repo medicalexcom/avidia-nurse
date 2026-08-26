@@ -255,7 +255,9 @@ export function TodayScreen() {
             <View style={styles.startTop}>
               <View>
                 <Text style={styles.startEyebrow}>YOUR DAILY SESSION</Text>
-                <Text testID="start-today-button" style={styles.startHeading}>Start today</Text>
+                <Text testID="start-today-button" style={styles.startHeading}>
+                  Start today
+                </Text>
               </View>
               <View style={styles.startIcon}>
                 <Ionicons name="sparkles" size={20} color="#ffffff" />
@@ -334,7 +336,9 @@ export function TodayScreen() {
       )}
 
       {streak && streakLine(streak) ? (
-        <Text testID="study-streak" style={styles.streakLine}>{streakLine(streak)}</Text>
+        <Text testID="study-streak" style={styles.streakLine}>
+          {streakLine(streak)}
+        </Text>
       ) : null}
 
       {/* M13 spec V: one tap from Today into the day-by-day study plan. */}

@@ -158,7 +158,11 @@ export function describeSemanticContext(context: SemanticContext | undefined): s
     parts.push(`Reading level: ${context.readingLevel}`);
   }
 
-  if (context.partIndex !== undefined && context.totalParts !== undefined && context.totalParts > 1) {
+  if (
+    context.partIndex !== undefined &&
+    context.totalParts !== undefined &&
+    context.totalParts > 1
+  ) {
     parts.push(`(part ${context.partIndex}/${context.totalParts})`);
   }
 

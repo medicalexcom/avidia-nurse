@@ -71,7 +71,10 @@ function section(overrides: Partial<ExtractedSection>): ExtractedSection {
   };
 }
 
-function aggregateWithMastery(mastery: number, overrides: Partial<MasteryAggregate> = {}): MasteryAggregate {
+function aggregateWithMastery(
+  mastery: number,
+  overrides: Partial<MasteryAggregate> = {}
+): MasteryAggregate {
   const agg = initialAggregate();
   agg.mastery = mastery;
   agg.attemptsCount = mastery > 0 ? 5 : 0;
@@ -258,14 +261,14 @@ describe('SKILL #2: Semantic Chunking & Context Window Optimization', () => {
     for (const part of parts) {
       // Each part respects the size budget (with bounded overlap carried
       // forward); none should balloon far past the context-bonus ceiling.
-      expect(estimateTokens(part)).toBeLessThanOrEqual(
-        Math.ceil((MAX_CHUNK_CHARS * 1.2) / 4) + 10
-      );
+      expect(estimateTokens(part)).toBeLessThanOrEqual(Math.ceil((MAX_CHUNK_CHARS * 1.2) / 4) + 10);
     }
   });
 
   it('exposes the concept-boundary and relationship marker vocabularies used by the chunker', () => {
-    expect(CONCEPT_BOUNDARY_MARKERS).toEqual(expect.arrayContaining(['prerequisite:', 'causes of']));
+    expect(CONCEPT_BOUNDARY_MARKERS).toEqual(
+      expect.arrayContaining(['prerequisite:', 'causes of'])
+    );
     expect(RELATIONSHIP_MARKERS).toEqual(expect.arrayContaining(['leads to', 'therefore']));
   });
 });
@@ -275,7 +278,7 @@ describe('SKILL #2: Semantic Chunking & Context Window Optimization', () => {
 // ===========================================================================
 
 describe("SKILL #3: Multi-Level Question Generation (Bloom's Taxonomy)", () => {
-  it('groups every cognitive level into a Bloom\'s level group', () => {
+  it("groups every cognitive level into a Bloom's level group", () => {
     for (const level of COGNITIVE_LEVELS) {
       // prioritization is a nursing-specific extension that overlaps
       // analysis/evaluation; getLevelGroup must still return a valid group.
@@ -322,13 +325,13 @@ describe("SKILL #3: Multi-Level Question Generation (Bloom's Taxonomy)", () => {
     ]);
   });
 
-  it('checks whether a generated question meets the student\'s mastery-band targets', () => {
+  it("checks whether a generated question meets the student's mastery-band targets", () => {
     const targets = getTargetsForMastery(0.5); // developing → application/analysis
     expect(meetsLevelTargets('application', targets.primaryLevels)).toBe(true);
     expect(meetsLevelTargets('synthesis', targets.primaryLevels, false)).toBe(false);
   });
 
-  it('computes Bloom\'s level coverage and recommends the least-covered level next', () => {
+  it("computes Bloom's level coverage and recommends the least-covered level next", () => {
     const levels: CognitiveLevel[] = ['recall', 'recall', 'recall', 'understanding'];
     const coverage = calculateBlomsLevelCoverage(levels);
 
@@ -343,7 +346,7 @@ describe("SKILL #3: Multi-Level Question Generation (Bloom's Taxonomy)", () => {
     expect(next).not.toBe('understanding');
   });
 
-  it('generates a prompt suffix requesting every level in a Bloom\'s level group', () => {
+  it("generates a prompt suffix requesting every level in a Bloom's level group", () => {
     const suffix = generateBlomsPromptSuffix('foundational', 2);
     expect(suffix).toContain('recall');
     expect(suffix).toContain('understanding');
@@ -416,7 +419,7 @@ describe('END-TO-END: All Skills Integrated', () => {
     expect(glucoseTargets.primaryLevels).toContain('synthesis');
   });
 
-  it('produces a prerequisite-ordered study plan whose questions each match the concept\'s mastery band', () => {
+  it("produces a prerequisite-ordered study plan whose questions each match the concept's mastery band", () => {
     // Skill #1: order concepts prerequisite-first.
     const conceptIds = ['dka-mgmt', 'dka', 'fluids', 'glucose'];
     const studyOrder = topologicalSortByPrerequisites(conceptIds, CONCEPT_MAP);

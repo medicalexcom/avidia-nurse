@@ -19,7 +19,9 @@ test.describe('Study Plan and Calendar View', () => {
 
   test('should show week view with planned items', async ({ authenticatedPage }) => {
     // Look for week view section
-    await authenticatedPage.waitForSelector('[data-testid="week-view"]', { timeout: 5000 }).catch(() => null);
+    await authenticatedPage
+      .waitForSelector('[data-testid="week-view"]', { timeout: 5000 })
+      .catch(() => null);
 
     const weekView = authenticatedPage.locator('[data-testid="week-view"]');
 
@@ -55,7 +57,7 @@ test.describe('Study Plan and Calendar View', () => {
     const modeButtons = authenticatedPage.locator('[data-testid="mode-button"]');
 
     // If modes exist
-    if (await modeButtons.count() > 0) {
+    if ((await modeButtons.count()) > 0) {
       // Should have multiple modes (Rapid Response, Find the Danger, etc)
       const modeCount = await modeButtons.count();
       expect(modeCount).toBeGreaterThan(0);
@@ -87,9 +89,11 @@ test.describe('Study Plan and Calendar View', () => {
       await progressTab.click();
 
       // Should show analytics content
-      await authenticatedPage.waitForSelector('[data-testid="analytics-content"]', {
-        timeout: 5000,
-      }).catch(() => null);
+      await authenticatedPage
+        .waitForSelector('[data-testid="analytics-content"]', {
+          timeout: 5000,
+        })
+        .catch(() => null);
 
       // Check for key analytics sections
       const masteryMap = authenticatedPage.locator('[data-testid="mastery-map"]');

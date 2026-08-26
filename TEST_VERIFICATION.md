@@ -7,11 +7,11 @@ Question Generation / Bloom's Taxonomy) work correctly together.
 
 ## What was added
 
-| File | Purpose |
-| --- | --- |
-| `packages/assessment/src/__tests__/skill-integration.test.ts` | 21-test integration suite (Jest) exercising all three skills individually and together |
-| `scripts/test-skills.sh` | Executable helper to run the suite, optionally filtered to one skill or the end-to-end block |
-| `TEST_VERIFICATION.md` | This checklist |
+| File                                                          | Purpose                                                                                      |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `packages/assessment/src/__tests__/skill-integration.test.ts` | 21-test integration suite (Jest) exercising all three skills individually and together       |
+| `scripts/test-skills.sh`                                      | Executable helper to run the suite, optionally filtered to one skill or the end-to-end block |
+| `TEST_VERIFICATION.md`                                        | This checklist                                                                               |
 
 The suite imports only existing, already-shipped code:
 
@@ -35,11 +35,7 @@ No third-party/external packages were added.
 ## Verification checklist
 
 - [x] `packages/assessment/src/__tests__/skill-integration.test.ts` exists
-      and contains 21 tests across four `describe` blocks:
-      - [x] `SKILL #1: Concept Prerequisites & Mastery Gating` — 5 tests
-      - [x] `SKILL #2: Semantic Chunking & Context Window Optimization` — 4 tests
-      - [x] `SKILL #3: Multi-Level Question Generation (Bloom's Taxonomy)` — 9 tests
-      - [x] `END-TO-END: All Skills Integrated` — 3 tests
+      and contains 21 tests across four `describe` blocks: - [x] `SKILL #1: Concept Prerequisites & Mastery Gating` — 5 tests - [x] `SKILL #2: Semantic Chunking & Context Window Optimization` — 4 tests - [x] `SKILL #3: Multi-Level Question Generation (Bloom's Taxonomy)` — 9 tests - [x] `END-TO-END: All Skills Integrated` — 3 tests
 - [x] All tests use existing exported types/functions — no new production
       code, no mocks, no network/database access.
 - [x] `pnpm --filter @avidia/assessment test` passes for the new suite
@@ -71,6 +67,7 @@ pnpm --filter @avidia/assessment test -- src/__tests__/skill-integration.test.ts
 ## Test coverage summary
 
 ### SKILL #1 — Concept Prerequisites & Mastery Gating (5 tests)
+
 1. Blocks a concept when all prerequisites are below the 70% mastery
    threshold and flags them as blocking (strength ≥ 8).
 2. Unlocks the concept once every prerequisite reaches/exceeds the
@@ -82,6 +79,7 @@ pnpm --filter @avidia/assessment test -- src/__tests__/skill-integration.test.ts
    topological order that always places prerequisites before dependents.
 
 ### SKILL #2 — Semantic Chunking & Context Window Optimization (4 tests)
+
 1. Keeps a full cause → effect reasoning chain within a single chunk and
    flags it via `semanticContext.hasRelationshipChain`.
 2. Extracts concept terms (e.g. "Glucose Metabolism", "Diabetic
@@ -93,6 +91,7 @@ pnpm --filter @avidia/assessment test -- src/__tests__/skill-integration.test.ts
    by the chunker are present and exported.
 
 ### SKILL #3 — Multi-Level Question Generation / Bloom's Taxonomy (9 tests)
+
 1. Every `CognitiveLevel` (including the nursing-specific
    `prioritization`) maps to a valid Bloom's level group.
 2. Unassessed students are targeted with foundational (`recall`,
@@ -111,6 +110,7 @@ pnpm --filter @avidia/assessment test -- src/__tests__/skill-integration.test.ts
    group with the requested minimum count.
 
 ### END-TO-END — All Skills Integrated (3 tests)
+
 1. A gated concept (DKA) with an unmastered prerequisite (Glucose
    Metabolism) is (a) correctly chunked with concept-term cross-references
    (Skill #2), (b) correctly blocked by prerequisite gating (Skill #1), and

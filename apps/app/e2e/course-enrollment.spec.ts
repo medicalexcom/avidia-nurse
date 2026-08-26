@@ -38,7 +38,8 @@ test.describe('Course Enrollment and Materials', () => {
       // Course should show as enrolled
       const enrolledStatus = enrollButton.locator('[data-testid="enrolled-badge"]');
       const isEnrolled =
-        (await enrollButton.isDisabled()) || (await enrolledStatus.isVisible({ timeout: 2000 }).catch(() => false));
+        (await enrollButton.isDisabled()) ||
+        (await enrolledStatus.isVisible({ timeout: 2000 }).catch(() => false));
 
       expect(isEnrolled).toBeTruthy();
     }
@@ -96,10 +97,14 @@ test.describe('Course Enrollment and Materials', () => {
 
     // Should not show error message
     const errorMessage = authenticatedPage.locator('[data-testid="error-message"]');
-    await expect(errorMessage).not.toBeVisible({ timeout: 2000 }).catch(() => null);
+    await expect(errorMessage)
+      .not.toBeVisible({ timeout: 2000 })
+      .catch(() => null);
 
     // Should have content loaded
     const content = authenticatedPage.locator('[data-testid="course-content"]');
-    await expect(content).toBeVisible({ timeout: 2000 }).catch(() => null);
+    await expect(content)
+      .toBeVisible({ timeout: 2000 })
+      .catch(() => null);
   });
 });

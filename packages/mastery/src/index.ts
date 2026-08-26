@@ -5,3 +5,4 @@ export * from './examUrgency';
 export * from './priority';
 export * from './recommend';
 export * from './selectQuestion';
+export * from './prerequisites';

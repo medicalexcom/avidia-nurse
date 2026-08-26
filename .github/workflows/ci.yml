@@ -27,7 +27,9 @@ jobs:
           run_install: false
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
 
       - name: Check formatting
         run: pnpm run format:check
@@ -77,7 +79,9 @@ jobs:
       # Lower-severity advisories show up in the same command locally
       # (`pnpm audit`) but do not block merges.
       - name: Audit dependencies
-        run: pnpm audit --audit-level high
+        run: |
+          corepack enable
+          pnpm audit --audit-level high
 
   secret-scan:
     name: Secret scan

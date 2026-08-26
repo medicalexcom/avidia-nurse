@@ -252,7 +252,7 @@ export function PlannerScreen() {
     const done = activity.status === 'completed';
     const skipped = activity.status === 'skipped';
     return (
-      <View key={activity.id} style={styles.activityRow}>
+      <View key={activity.id} testID={`activity-${activity.id}`} style={styles.activityRow}>
         <View style={styles.activityText}>
           <Text style={[styles.activityTitle, (done || skipped) && styles.activityDone]}>
             {done ? '✓ ' : ''}
@@ -268,6 +268,7 @@ export function PlannerScreen() {
         {actionable && !done && !skipped ? (
           <View style={styles.activityActions}>
             <Pressable
+              testID={`start-activity-${activity.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Start ${ACTIVITY_TYPE_LABELS[activity.activity_type]}`}
               onPress={() => launch(activity)}
@@ -278,6 +279,7 @@ export function PlannerScreen() {
               </Text>
             </Pressable>
             <Pressable
+              testID={`skip-activity-${activity.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Skip ${ACTIVITY_TYPE_LABELS[activity.activity_type]}`}
               onPress={() => skip(activity)}
@@ -292,11 +294,11 @@ export function PlannerScreen() {
   };
 
   return (
-    <Screen title="Planner">
+    <Screen title="Planner" testID="planner-screen">
       <ErrorBanner message={error} />
 
       {examBadges.length > 0 ? (
-        <View style={styles.card}>
+        <View testID="exam-badges" style={styles.card}>
           {examBadges.map((badge) => (
             <View key={badge.examId} style={styles.examRow}>
               <Text style={styles.examTitle}>
@@ -310,7 +312,7 @@ export function PlannerScreen() {
 
       {noAvailability ? (
         // Spec C/AR: zero availability is a valid preference, stated plainly.
-        <View style={styles.card}>
+        <View testID="no-availability-card" style={styles.card}>
           <Text style={styles.cardHeading}>No study time set</Text>
           <Text style={styles.muted}>
             Your availability is set to zero minutes every day. Add some time and Avidia will plan
@@ -325,7 +327,7 @@ export function PlannerScreen() {
 
       {stored ? (
         <>
-          <View style={styles.todayCard}>
+          <View testID="today-section" style={styles.todayCard}>
             <Text style={styles.todayHeading}>Today</Text>
             {todayActivities.length === 0 ? (
               <Text style={styles.muted}>
@@ -336,6 +338,7 @@ export function PlannerScreen() {
                 {todayActivities.map((activity) => renderActivity(activity, true))}
                 {todayPending.length > 0 && todayPending[0] ? (
                   <PrimaryButton
+                    testID="start-todays-plan"
                     label="START TODAY'S PLAN"
                     onPress={() => launch(todayPending[0]!)}
                   />
@@ -348,7 +351,7 @@ export function PlannerScreen() {
 
           {stored.plan.over_capacity ? (
             // Spec P: honest constraint — never silently drop work.
-            <View style={styles.capacityCard}>
+            <View testID="capacity-warning" style={styles.capacityCard}>
               <Text style={styles.capacityText}>
                 There is more recommended work than your available time before your next exam. Your
                 plan focuses on the highest-impact items first; adding minutes in settings fits in
@@ -358,7 +361,7 @@ export function PlannerScreen() {
           ) : null}
 
           {upcomingDates.length > 0 ? (
-            <View style={styles.card}>
+            <View testID="this-week-section" style={styles.card}>
               <Text style={styles.cardHeading}>This week</Text>
               {upcomingDates.slice(0, 6).map((date) => {
                 const activities = byDate.get(date) ?? [];
@@ -373,7 +376,7 @@ export function PlannerScreen() {
           ) : null}
         </>
       ) : (
-        <View style={styles.card}>
+        <View testID="no-plan-card" style={styles.card}>
           <Text style={styles.cardHeading}>No plan yet</Text>
           <Text style={styles.muted}>
             Avidia builds a day-by-day plan from your exams, your available time, and what needs
@@ -384,6 +387,7 @@ export function PlannerScreen() {
 
       <View style={styles.footer}>
         <PrimaryButton
+          testID="build-plan-button"
           label={generating ? 'Building your plan…' : stored ? 'Refresh plan' : 'Build my plan'}
           onPress={regenerate}
           disabled={generating}

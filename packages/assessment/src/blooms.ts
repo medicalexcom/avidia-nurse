@@ -6,7 +6,7 @@
  * competency from foundational knowledge to clinical reasoning mastery.
  */
 
-import { CognitiveLevel, COGNITIVE_LEVELS, QuestionDifficulty } from '@avidia/domain';
+import { CognitiveLevel, QuestionDifficulty } from '@avidia/domain';
 
 /**
  * Bloom's Taxonomy level groups for study progression.
@@ -20,8 +20,11 @@ export const BLOOMS_LEVELS = {
 export type BlomsLevelGroup = keyof typeof BLOOMS_LEVELS;
 
 export function getLevelGroup(level: CognitiveLevel): BlomsLevelGroup {
-  if (BLOOMS_LEVELS.foundational.includes(level as any)) return 'foundational';
-  if (BLOOMS_LEVELS.intermediate.includes(level as any)) return 'intermediate';
+  const foundational: readonly CognitiveLevel[] = BLOOMS_LEVELS.foundational;
+  const intermediate: readonly CognitiveLevel[] = BLOOMS_LEVELS.intermediate;
+
+  if (foundational.includes(level)) return 'foundational';
+  if (intermediate.includes(level)) return 'intermediate';
   return 'advanced';
 }
 

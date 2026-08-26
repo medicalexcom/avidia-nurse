@@ -217,11 +217,11 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
   }
 
   return (
-    <Screen title={`Study — ${data.course.title}`}>
+    <Screen testID="study-dashboard" title={`Study — ${data.course.title}`}>
       <ErrorBanner message={error} />
 
       {upcoming && countdown ? (
-        <View style={styles.examCard}>
+        <View testID="exam-info-card" style={styles.examCard}>
           <Text style={styles.examTitle}>{upcoming.title}</Text>
           <Text style={styles.examCountdown}>{countdown.label}</Text>
         </View>
@@ -230,18 +230,19 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
       )}
 
       {top ? (
-        <View style={styles.recommendCard}>
+        <View testID="recommendation-card" style={styles.recommendCard}>
           <Text style={styles.recommendHeading}>Recommended next</Text>
-          <Text style={styles.recommendConcept}>
+          <Text testID="concept-name" style={styles.recommendConcept}>
             {data.conceptNames.get(top.conceptId) ?? 'Course material'}
           </Text>
           <Text style={styles.recommendState}>{MASTERY_STATE_LABELS[top.masteryState]}</Text>
           {top.reasonCodes.map((reason) => (
-            <Text key={reason} style={styles.reason}>
+            <Text testID={`reason-${reason}`} key={reason} style={styles.reason}>
               • {RECOMMENDATION_REASON_LABELS[reason]}
             </Text>
           ))}
           <PrimaryButton
+            testID="start-adaptive-session-button"
             label="Start adaptive session"
             onPress={() => router.push(`/course/${courseId}/practice?mode=adaptive`)}
           />
@@ -252,7 +253,7 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
           processed.
         </Text>
       ) : (
-        <View style={styles.recommendCard}>
+        <View testID="no-concepts-card" style={styles.recommendCard}>
           <Text style={styles.muted}>
             No concepts to study yet. Upload course materials, or let Avidia build study questions
             from your course name in the meantime — course material always takes priority once
@@ -278,6 +279,7 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
                 </>
               ) : null}
               <PrimaryButton
+                testID="generate-questions-button"
                 label="Generate study questions from course name"
                 onPress={generateFromCourseName}
                 busy={generating}
@@ -290,12 +292,13 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
       {STATE_ORDER.filter((state) => (groups.get(state) ?? []).length > 0).map((state) => {
         const list = groups.get(state)!;
         return (
-          <View key={state} style={styles.group}>
+          <View testID={`concept-group-${state}`} key={state} style={styles.group}>
             <Text style={styles.groupHeading}>
               {MASTERY_STATE_LABELS[state]} ({list.length})
             </Text>
             {list.slice(0, 8).map((rec) => (
               <Pressable
+                testID={`concept-${rec.conceptId}`}
                 key={rec.conceptId}
                 accessibilityRole="button"
                 onPress={() => router.push(`/course/${courseId}/concept/${rec.conceptId}`)}
@@ -311,7 +314,7 @@ export function StudyDashboardScreen({ courseId }: { courseId: string }) {
         );
       })}
 
-      <View style={styles.footerActions}>
+      <View testID="footer-actions" style={styles.footerActions}>
         <SecondaryButton
           label="Case Studies"
           onPress={() => router.push(`/course/${courseId}/case-studies`)}

@@ -24,14 +24,16 @@ export function Screen({
   section,
   icon,
   children,
+  testID,
 }: {
   title: string;
   section?: SectionKey;
   icon?: keyof typeof Ionicons.glyphMap;
   children?: ReactNode;
+  testID?: string;
 }) {
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent}>
+    <ScrollView testID={testID} style={styles.screen} contentContainerStyle={styles.screenContent}>
       {section && icon ? (
         <View style={styles.screenHeading}>
           <SectionIcon section={section} name={icon} size={22} />
@@ -68,12 +70,13 @@ export function PlaceholderScreen({ title, milestone }: { title: string; milesto
   );
 }
 
-export function Field(props: TextInputProps & { label: string }) {
-  const { label, ...inputProps } = props;
+export function Field(props: TextInputProps & { label: string; testID?: string }) {
+  const { label, testID, ...inputProps } = props;
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        testID={testID}
         placeholderTextColor={colors.textFaint}
         style={styles.input}
         accessibilityLabel={label}
@@ -88,14 +91,17 @@ export function PrimaryButton({
   onPress,
   disabled,
   busy,
+  testID,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   busy?: boolean;
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       onPress={onPress}
       disabled={disabled || busy}
@@ -119,14 +125,17 @@ export function SecondaryButton({
   onPress,
   disabled,
   destructive,
+  testID,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   destructive?: boolean;
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       onPress={onPress}
       disabled={disabled}
@@ -170,10 +179,10 @@ export function ConfirmInline({
   );
 }
 
-export function ErrorBanner({ message }: { message: string | null }) {
+export function ErrorBanner({ message, testID }: { message: string | null; testID?: string }) {
   if (!message) return null;
   return (
-    <View style={styles.errorBanner} accessibilityRole="alert">
+    <View testID={testID} style={styles.errorBanner} accessibilityRole="alert">
       <Text style={styles.errorText}>{message}</Text>
     </View>
   );
@@ -231,7 +240,7 @@ export function SectionIcon({
         { backgroundColor: soft, width: box, height: box, borderRadius: box / 2 },
       ]}
     >
-      <Ionicons name={name} size={size} color={accent} />
+      <Ionicons name={icon} size={size} color={accent} />
     </View>
   );
 }
@@ -247,15 +256,18 @@ export function CourseListRow({
   title,
   meta,
   onPress,
+  testID,
 }: {
   section: SectionKey;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   meta?: string;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={title}
       onPress={onPress}

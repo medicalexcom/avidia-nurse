@@ -251,11 +251,11 @@ export function TodayScreen() {
             </View>
           ) : null}
 
-          <View style={styles.startCard}>
+          <View style={styles.startCard} testID="study-time-indicator">
             <View style={styles.startTop}>
               <View>
                 <Text style={styles.startEyebrow}>YOUR DAILY SESSION</Text>
-                <Text style={styles.startHeading}>Start today</Text>
+                <Text testID="start-today-button" style={styles.startHeading}>Start today</Text>
               </View>
               <View style={styles.startIcon}>
                 <Ionicons name="sparkles" size={20} color="#ffffff" />
@@ -270,6 +270,7 @@ export function TodayScreen() {
               {SESSION_DURATION_MINUTES.map((minutes) => (
                 <Pressable
                   key={minutes}
+                  testID={`time-option-${minutes}-minutes`}
                   accessibilityRole="button"
                   accessibilityLabel={`Start a ${minutes} minute session`}
                   onPress={() => startSession(minutes)}
@@ -281,6 +282,8 @@ export function TodayScreen() {
                 </Pressable>
               ))}
             </View>
+          </View>
+
           </View>
 
           {data && data.dueReviewCount > 0 ? (

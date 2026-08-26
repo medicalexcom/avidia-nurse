@@ -58,7 +58,9 @@ jobs:
           run_install: false
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
 
       - name: Run worker (drain once)
         run: pnpm --filter @avidia/worker start:once

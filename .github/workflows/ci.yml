@@ -13,6 +13,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Do not let setup-node's automatic package-manager cache probe for pnpm
+      # before pnpm/action-setup has installed it.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
@@ -20,6 +22,8 @@ jobs:
 
       # Corepack is not enabled on every hosted Node 22 image. Install pnpm
       # explicitly so subsequent steps never depend on the runner PATH.
+          package-manager-cache: false
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -62,10 +66,19 @@ jobs:
 
       # No `cache: pnpm` here: this job runs `pnpm audit` against the lockfile
       # without installing, so there is no pnpm store to cache.
+      # Do not let setup-node's automatic package-manager cache probe for pnpm
+      # before pnpm/action-setup has installed it.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+          run_install: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4

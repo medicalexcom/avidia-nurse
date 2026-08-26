@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/auth.fixture';
-import { testData } from './fixtures/data.fixture';
 
 test.describe('Course Enrollment and Materials', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
@@ -27,9 +26,6 @@ test.describe('Course Enrollment and Materials', () => {
     const enrollButton = authenticatedPage.locator('[data-testid="enroll-button"]').first();
 
     if (await enrollButton.isVisible()) {
-      const courseBefore = authenticatedPage.locator('[data-testid="course-item"]');
-      const countBefore = await courseBefore.count();
-
       await enrollButton.click();
 
       // Should show success message or redirect

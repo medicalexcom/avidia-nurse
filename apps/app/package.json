@@ -10,7 +10,11 @@
     "web": "expo start --web",
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "test:e2e": "playwright test",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -38,7 +42,8 @@
     "react-native": "0.86.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "@playwright/test": "^1.48.2"
   },
   "devDependencies": {
     "@testing-library/react-native": "^14.0.1",

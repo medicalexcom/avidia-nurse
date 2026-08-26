@@ -284,8 +284,6 @@ export function TodayScreen() {
             </View>
           </View>
 
-          </View>
-
           {data && data.dueReviewCount > 0 ? (
             <Pressable
               accessibilityRole="button"
@@ -302,14 +300,14 @@ export function TodayScreen() {
           ) : null}
 
           {topPriorities.length > 0 ? (
-            <View style={styles.card}>
+            <View testID="recommendations-section" style={styles.card}>
               <Text style={styles.cardHeading}>Today&apos;s priorities</Text>
               {topPriorities.map((rec) => (
-                <View key={rec.conceptId} style={styles.priorityRow}>
+                <View key={rec.conceptId} testID="recommendation-item" style={styles.priorityRow}>
                   <Text style={styles.priorityName}>
                     {data?.conceptNames.get(rec.conceptId) ?? 'Course material'}
                   </Text>
-                  <Text style={styles.priorityMeta}>
+                  <Text testID="recommendation-reason" style={styles.priorityMeta}>
                     {MASTERY_STATE_LABELS[rec.masteryState]}
                     {rec.reasonCodes[0]
                       ? ` — ${RECOMMENDATION_REASON_LABELS[rec.reasonCodes[0]]}`
@@ -336,7 +334,7 @@ export function TodayScreen() {
       )}
 
       {streak && streakLine(streak) ? (
-        <Text style={styles.streakLine}>{streakLine(streak)}</Text>
+        <Text testID="study-streak" style={styles.streakLine}>{streakLine(streak)}</Text>
       ) : null}
 
       {/* M13 spec V: one tap from Today into the day-by-day study plan. */}

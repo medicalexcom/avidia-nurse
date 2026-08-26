@@ -254,6 +254,12 @@ importers:
       '@avidia/domain':
         specifier: workspace:*
         version: link:../domain
+      '@avidia/mastery':
+        specifier: workspace:*
+        version: link:../mastery
+      '@avidia/rag':
+        specifier: workspace:*
+        version: link:../rag
     devDependencies:
       '@babel/core':
         specifier: ^7.26.0

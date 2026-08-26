@@ -47,3 +47,6 @@ jobs:
             git commit -m "chore: run prettier to satisfy CI format check"
             git push origin HEAD:copilot/add-e2e-integration-tests-for-skills
           fi
+
+      - name: Verify formatting
+        run: pnpm exec prettier --check .

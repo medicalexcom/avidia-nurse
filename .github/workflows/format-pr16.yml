@@ -1,0 +1,49 @@
+name: Format PR 16
+
+on:
+  push:
+    branches:
+      - copilot/add-e2e-integration-tests-for-skills
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: copilot/add-e2e-integration-tests-for-skills
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format repository
+        run: pnpm exec prettier . --write
+
+      - name: Commit formatting changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed."
+          else
+            git commit -m "chore: run prettier to satisfy CI format check"
+            git push origin HEAD:copilot/add-e2e-integration-tests-for-skills
+          fi

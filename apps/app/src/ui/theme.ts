@@ -17,16 +17,16 @@ import type { ViewStyle } from 'react-native';
  */
 
 export const colors = {
-  primary: '#0f6bff',
-  primaryDark: '#0a4fc0',
-  background: '#f7f9fc',
+  primary: '#4056d6',
+  primaryDark: '#293aa6',
+  background: '#f5f6fb',
   surface: '#ffffff',
-  surfaceSunken: '#eef2f7',
-  border: '#e2e8f0',
-  borderStrong: '#cbd5e1',
-  text: '#0f172a',
-  textMuted: '#64748b',
-  textFaint: '#94a3b8',
+  surfaceSunken: '#eef0fa',
+  border: '#e3e5f0',
+  borderStrong: '#c9cee3',
+  text: '#18213d',
+  textMuted: '#69738d',
+  textFaint: '#98a1b8',
   danger: '#dc2626',
   dangerSoft: '#fef2f2',
   good: '#15803d',
@@ -42,12 +42,12 @@ export const colors = {
  * feel like six distinct places.
  */
 export const sectionAccents = {
-  home: { accent: '#0f6bff', soft: '#e6f0ff' },
-  courses: { accent: '#7c3aed', soft: '#f1ebfe' },
-  study: { accent: '#0e7490', soft: '#e3f4f7' },
-  weaknesses: { accent: '#c2410c', soft: '#fdece1' },
-  progress: { accent: '#15803d', soft: '#e7f5ec' },
-  profile: { accent: '#475569', soft: '#eef1f4' },
+  home: { accent: '#4056d6', soft: '#ebedff' },
+  courses: { accent: '#8057c8', soft: '#f2edfc' },
+  study: { accent: '#16818a', soft: '#e5f5f4' },
+  weaknesses: { accent: '#c06a3e', soft: '#fff0e9' },
+  progress: { accent: '#36845c', soft: '#e8f5ec' },
+  profile: { accent: '#5a6681', soft: '#edf0f6' },
 } as const;
 
 export type SectionKey = keyof typeof sectionAccents;
@@ -99,4 +99,4 @@ export const shadow: Record<'sm' | 'md', ViewStyle> = {
 export const spacing = (n: number) => n * 4;
 
 /** Breakpoint above which the shell switches from tab bar to sidebar. */
-export const SIDEBAR_MIN_WIDTH = 768;
+export const SIDEBAR_MIN_WIDTH = 900;

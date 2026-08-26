@@ -13,13 +13,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Do not let setup-node's automatic package-manager cache probe for pnpm
+      # before pnpm/action-setup has installed it.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
 
-      # Corepack is not enabled on every hosted Node 22 image. Install pnpm
-      # explicitly so subsequent steps never depend on the runner PATH.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -27,9 +28,7 @@ jobs:
           run_install: false
 
       - name: Install dependencies
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Check formatting
         run: pnpm run format:check
@@ -62,12 +61,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # No `cache: pnpm` here: this job runs `pnpm audit` against the lockfile
-      # without installing, so there is no pnpm store to cache.
+      # Do not let setup-node's automatic package-manager cache probe for pnpm
+      # before pnpm/action-setup has installed it.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -79,9 +79,7 @@ jobs:
       # Lower-severity advisories show up in the same command locally
       # (`pnpm audit`) but do not block merges.
       - name: Audit dependencies
-        run: |
-          corepack enable
-          pnpm audit --audit-level high
+        run: pnpm audit --audit-level high
 
   secret-scan:
     name: Secret scan

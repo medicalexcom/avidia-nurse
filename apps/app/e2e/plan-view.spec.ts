@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/auth.fixture';
-import { testData } from './fixtures/data.fixture';
 
 test.describe('Study Plan and Calendar View', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
@@ -53,7 +52,6 @@ test.describe('Study Plan and Calendar View', () => {
 
   test('should navigate to different study modes', async ({ authenticatedPage }) => {
     // Look for modes navigation
-    const modesNav = authenticatedPage.locator('[data-testid="study-modes-nav"]');
     const modeButtons = authenticatedPage.locator('[data-testid="mode-button"]');
 
     // If modes exist

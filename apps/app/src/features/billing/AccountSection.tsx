@@ -113,8 +113,8 @@ export function AccountSection() {
   return (
     <View style={styles.section} testID="account-section">
       <Text style={styles.heading}>Subscription & account</Text>
-      <ErrorBanner message={error} />
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      <ErrorBanner message={error} testID="account-error" />
+      {notice ? <Text testID="account-notice" style={styles.notice}>{notice}</Text> : null}
 
       <Text style={styles.planLine} testID="plan-line">
         Plan: {plan === 'pro' ? 'PRO' : plan === 'free' ? 'Free' : '—'}
@@ -122,16 +122,27 @@ export function AccountSection() {
       </Text>
 
       {plan === 'pro' && hasStripeSub ? (
-        <SecondaryButton label="Manage subscription" onPress={onManageBilling} disabled={busy} />
+        <SecondaryButton
+          testID="manage-subscription-button"
+          label="Manage subscription"
+          onPress={onManageBilling}
+          disabled={busy}
+        />
       ) : (
         <SecondaryButton
+          testID="upgrade-button"
           label="Upgrade to PRO"
           onPress={() => router.push('/upgrade')}
           disabled={busy}
         />
       )}
 
-      <SecondaryButton label="Download my data" onPress={onExport} disabled={busy} />
+      <SecondaryButton
+        testID="export-data-button"
+        label="Download my data"
+        onPress={onExport}
+        disabled={busy}
+      />
 
       {confirmingDelete ? (
         <ConfirmInline
@@ -144,6 +155,7 @@ export function AccountSection() {
         />
       ) : (
         <SecondaryButton
+          testID="delete-account-button"
           label="Delete my account"
           destructive
           onPress={() => setConfirmingDelete(true)}

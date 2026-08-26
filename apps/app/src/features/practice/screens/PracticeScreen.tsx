@@ -747,10 +747,10 @@ export function PracticeScreen({
   if (phase.name === 'results') {
     const correct = answers.filter((answer) => answer.result.is_correct).length;
     return (
-      <Screen title="Session results">
+      <Screen testID="session-summary" title="Session results">
         {mode === 'adaptive' && summary ? (
           <View style={styles.summaryCard}>
-            <Text style={styles.scoreLine}>
+            <Text testID="questions-answered" style={styles.scoreLine}>
               You completed {summary.answeredCount}{' '}
               {summary.answeredCount === 1 ? 'activity' : 'activities'} — {summary.correctCount}{' '}
               correct.
@@ -761,7 +761,7 @@ export function PracticeScreen({
               </Text>
             ) : null}
             {summary.conceptsReviewed.length > 0 ? (
-              <Text style={styles.summaryLine}>
+              <Text testID="concepts-studied" style={styles.summaryLine}>
                 Concepts reviewed:{' '}
                 {summary.conceptsReviewed
                   .map((id) => conceptNames.get(id) ?? 'Course material')
@@ -769,7 +769,7 @@ export function PracticeScreen({
               </Text>
             ) : null}
             {summary.conceptsImproved.length > 0 ? (
-              <Text style={styles.summaryLine}>
+              <Text testID="mastery-change" style={styles.summaryLine}>
                 Moving forward:{' '}
                 {summary.conceptsImproved
                   .map((id) => conceptNames.get(id) ?? 'Course material')
@@ -816,6 +816,7 @@ export function PracticeScreen({
           </View>
         ))}
         <PrimaryButton
+          testID="return-to-today-button"
           label={mode === 'adaptive' ? 'Study again' : 'Practice again'}
           onPress={() => setPhase({ name: 'setup' })}
         />
@@ -915,7 +916,7 @@ export function PracticeScreen({
           onPress={onNext}
         />
       ) : mode === 'adaptive' ? (
-        <SecondaryButton label="Skip for now" onPress={onSkip} />
+        <SecondaryButton testID="skip-button" label="Skip for now" onPress={onSkip} />
       ) : null}
       <SecondaryButton label="End session" onPress={onEndEarly} />
     </Screen>
@@ -932,7 +933,7 @@ export function formatSourceRef(ref: QuestionSourceRef): string {
     parts.push(locator.section);
   }
   if (typeof locator.title === 'string' && locator.title.length > 0) {
-    parts.push(`“${locator.title}”`);
+    parts.push(`"${locator.title}"`);
   }
   return parts.length > 0
     ? `${ref.document_filename} — ${parts.join(', ')}`
@@ -1096,15 +1097,16 @@ function QuestionCard({
   };
 
   return (
-    <View style={styles.questionCard}>
+    <View testID="question-card" style={styles.questionCard}>
       <View style={styles.badgeRow}>
         <Text style={styles.typeBadge}>{QUESTION_TYPE_LABELS[question.question_type]}</Text>
         <Text style={styles.sourceBadge}>{QUESTION_SOURCE_TYPE_LABELS[question.source_type]}</Text>
       </View>
-      <Text style={styles.stem}>{question.stem}</Text>
+      <Text testID="question-text" style={styles.stem}>{question.stem}</Text>
 
       {question.question_type === 'numeric_calculation' ? (
         <TextInput
+          testID="numeric-answer-input"
           value={numericText}
           onChangeText={setNumericText}
           editable={!locked}
@@ -1115,49 +1117,52 @@ function QuestionCard({
           accessibilityLabel="Your numeric answer"
         />
       ) : (
-        question.options.map((option) => {
-          const revealed = revealedById.get(option.id);
-          const picked =
-            question.question_type === 'ordered_response'
-              ? orderedIds.includes(option.id)
-              : selectedIds.includes(option.id);
-          const orderNumber =
-            question.question_type === 'ordered_response' && picked
-              ? orderedIds.indexOf(option.id) + 1
-              : null;
-          return (
-            <Pressable
-              key={option.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Option: ${option.option_text}`}
-              disabled={locked}
-              onPress={() => toggleChoice(option.id)}
-              style={[
-                styles.option,
-                picked && !locked && styles.optionPicked,
-                revealed?.is_correct === true && styles.optionCorrect,
-                locked && picked && revealed?.is_correct === false && styles.optionWrongPick,
-              ]}
-            >
-              <Text style={styles.optionText}>
-                {orderNumber ? `${orderNumber}. ` : ''}
-                {option.option_text}
-              </Text>
-              {locked && revealed ? (
-                <Text style={styles.optionVerdict}>
-                  {question.question_type === 'ordered_response'
-                    ? `Correct position: ${revealed.correct_position}`
-                    : revealed.is_correct
-                      ? 'Correct answer'
-                      : picked
-                        ? 'Your pick — incorrect'
-                        : ''}
-                  {revealed.rationale ? ` — ${revealed.rationale}` : ''}
+        <View testID="answer-options">
+          {question.options.map((option, optionIndex) => {
+            const revealed = revealedById.get(option.id);
+            const picked =
+              question.question_type === 'ordered_response'
+                ? orderedIds.includes(option.id)
+                : selectedIds.includes(option.id);
+            const orderNumber =
+              question.question_type === 'ordered_response' && picked
+                ? orderedIds.indexOf(option.id) + 1
+                : null;
+            return (
+              <Pressable
+                key={option.id}
+                testID={`answer-option-${optionIndex}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Option: ${option.option_text}`}
+                disabled={locked}
+                onPress={() => toggleChoice(option.id)}
+                style={[
+                  styles.option,
+                  picked && !locked && styles.optionPicked,
+                  revealed?.is_correct === true && styles.optionCorrect,
+                  locked && picked && revealed?.is_correct === false && styles.optionWrongPick,
+                ]}
+              >
+                <Text style={styles.optionText}>
+                  {orderNumber ? `${orderNumber}. ` : ''}
+                  {option.option_text}
                 </Text>
-              ) : null}
-            </Pressable>
-          );
-        })
+                {locked && revealed ? (
+                  <Text style={styles.optionVerdict}>
+                    {question.question_type === 'ordered_response'
+                      ? `Correct position: ${revealed.correct_position}`
+                      : revealed.is_correct
+                        ? 'Correct answer'
+                        : picked
+                          ? 'Your pick — incorrect'
+                          : ''}
+                    {revealed.rationale ? ` — ${revealed.rationale}` : ''}
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
       )}
 
       {question.question_type === 'ordered_response' && !locked && orderedIds.length > 0 ? (
@@ -1167,10 +1172,11 @@ function QuestionCard({
       {!locked ? (
         <View style={styles.confidenceRow}>
           <Text style={styles.confidenceLabel}>How sure are you? (optional)</Text>
-          <View style={styles.choiceRow}>
+          <View testID="confidence-rating" style={styles.choiceRow}>
             {CONFIDENCE_LEVELS.map((level) => (
               <Pressable
                 key={level}
+                testID={`confidence-button-${level}`}
                 accessibilityRole="button"
                 accessibilityLabel={`Confidence: ${CONFIDENCE_LEVEL_LABELS[level]}`}
                 onPress={() => setConfidence(confidence === level ? null : level)}
@@ -1191,9 +1197,9 @@ function QuestionCard({
       ) : null}
 
       {!locked ? (
-        <PrimaryButton label="Submit answer" onPress={submit} disabled={!canSubmit} />
+        <PrimaryButton testID="submit-answer-button" label="Submit answer" onPress={submit} disabled={!canSubmit} />
       ) : (
-        <View style={styles.resultPanel}>
+        <View testID="session-summary" style={styles.resultPanel}>
           <Text style={result.is_correct ? styles.verdictCorrect : styles.verdictIncorrect}>
             {result.is_correct ? 'Correct' : 'Incorrect'}
           </Text>

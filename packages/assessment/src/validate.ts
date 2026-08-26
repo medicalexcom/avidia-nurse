@@ -1,5 +1,6 @@
 import {
   CognitiveLevel,
+  getCognitiveLevelGroup,
   isPriorityFramework,
   PriorityFramework,
   QuestionDifficulty,
@@ -13,6 +14,8 @@ import { RawGeneratedQuestion } from './schema';
 /**
  * Clinical validation pipeline (M7 spec K/L/N, ADR-0021; review gate added
  * 2026-08-25, see docs/architecture-decisions/ADR-0018-question-schema.md §4).
+ *
+ * Skill #3: Enhanced to track Bloom's cognitive levels for progressive learning.
  *
  * Every structurally valid question from the generator is judged here BEFORE
  * persistence. Hard rule violations (wrong option counts, answer leakage,
@@ -59,6 +62,8 @@ export interface ValidatedQuestion {
    */
   status: 'generated' | 'flagged';
   safetyFlags: string[];
+  /** Skill #3: Bloom's level group for progression tracking. */
+  blomsLevelGroup?: 'foundational' | 'intermediate' | 'advanced';
 }
 
 export type QuestionValidationResult =
@@ -254,6 +259,8 @@ export function validateGeneratedQuestion(raw: RawGeneratedQuestion): QuestionVa
       ),
       status: flags.length > 0 ? 'flagged' : 'generated',
       safetyFlags: flags,
+      // Skill #3: Track Bloom's level group
+      blomsLevelGroup: getCognitiveLevelGroup(raw.cognitive_level as CognitiveLevel),
     },
   };
 }

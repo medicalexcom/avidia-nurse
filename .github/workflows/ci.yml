@@ -34,19 +34,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Auto-format repository
-        run: |
-          pnpm exec prettier . --write
-          if git diff --quiet; then
-            echo "Formatting already clean."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "chore: run prettier to satisfy CI format check"
-            git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
-          fi
-
       - name: Repair pre-existing lint issues
         run: |
           git fetch origin main
@@ -87,6 +74,19 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
             git commit -m "fix: resolve lint errors in existing shared files"
+            git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
+          fi
+
+      - name: Auto-format repository
+        run: |
+          pnpm exec prettier . --write
+          if git diff --quiet; then
+            echo "Formatting already clean."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: run prettier to satisfy CI format check"
             git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
           fi
 

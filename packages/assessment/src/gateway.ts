@@ -246,7 +246,7 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
           'These are mastery-level questions requiring integration of multiple concepts.\n';
       } else if (Array.isArray(bloomsRequest.targetLevels)) {
         const levels = bloomsRequest.targetLevels.join(', ');
-        bloomsInstruction = `Focus on these specific Bloom\'s cognitive levels: ${levels}.\n`;
+        bloomsInstruction = `Focus on these specific Bloom's cognitive levels: ${levels}.\n`;
       }
 
       if (bloomsRequest.segregateByLevel && bloomsRequest.minPerLevel) {

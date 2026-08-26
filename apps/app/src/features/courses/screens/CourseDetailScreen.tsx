@@ -19,8 +19,9 @@ import {
   PrimaryButton,
   Screen,
   SecondaryButton,
+  SectionIcon,
 } from '../../../ui/components';
-import { colors, spacing } from '../../../ui/theme';
+import { colors, radius, sectionAccents, shadow, spacing } from '../../../ui/theme';
 import {
   archiveOwnCourse,
   deleteOwnCourse,
@@ -141,6 +142,10 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
       <ErrorBanner message={error} />
       {error ? <SecondaryButton label="Retry" onPress={load} /> : null}
 
+      {course.status === 'active' && modules.length === 0 && exams.length === 0 ? (
+        <FirstSteps courseId={courseId} />
+      ) : null}
+
       <View style={styles.metaCard}>
         {course.term ? <Text style={styles.meta}>Term: {course.term}</Text> : null}
         {course.institution_name ? (
@@ -207,6 +212,50 @@ export function CourseDetailScreen({ courseId }: { courseId: string }) {
         </>
       )}
     </Screen>
+  );
+}
+
+function FirstSteps({ courseId }: { courseId: string }) {
+  return (
+    <View style={styles.firstSteps}>
+      <View style={styles.firstStepsHeader}>
+        <SectionIcon section="courses" name="rocket-outline" size={20} />
+        <View style={styles.firstStepsCopy}>
+          <Text style={styles.firstStepsEyebrow}>YOUR NEXT STEPS</Text>
+          <Text style={styles.firstStepsTitle}>Make this course ready to study</Text>
+        </View>
+      </View>
+      <Text style={styles.muted}>
+        Add the materials you already have first. Avidia uses them to build concepts and practice
+        questions that stay connected to your coursework.
+      </Text>
+      <View style={styles.stepList}>
+        <Step number="1" label="Upload notes, slides, or a syllabus" />
+        <Step number="2" label="Add modules and an exam date when you know them" />
+        <Step number="3" label="Start an adaptive session when questions are ready" />
+      </View>
+      <View style={styles.firstStepsActions}>
+        <PrimaryButton
+          label="Add course material"
+          onPress={() => router.push(`/course/${courseId}/add-material`)}
+        />
+        <SecondaryButton
+          label="Schedule an exam"
+          onPress={() => router.push(`/course/${courseId}/new-exam`)}
+        />
+      </View>
+    </View>
+  );
+}
+
+function Step({ number, label }: { number: string; label: string }) {
+  return (
+    <View style={styles.step}>
+      <View style={styles.stepNumber}>
+        <Text style={styles.stepNumberText}>{number}</Text>
+      </View>
+      <Text style={styles.stepLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -439,12 +488,45 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     padding: spacing(4),
     gap: spacing(2),
     marginBottom: spacing(5),
   },
   metaActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2) },
+  firstSteps: {
+    backgroundColor: sectionAccents.courses.soft,
+    borderColor: '#dfd3f4',
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing(5),
+    gap: spacing(3),
+    marginBottom: spacing(5),
+    ...shadow.sm,
+  },
+  firstStepsHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing(3) },
+  firstStepsCopy: { flex: 1 },
+  firstStepsEyebrow: {
+    color: sectionAccents.courses.accent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.15,
+    marginBottom: spacing(0.5),
+  },
+  firstStepsTitle: { color: colors.text, fontSize: 19, fontWeight: '700' },
+  stepList: { gap: spacing(2) },
+  step: { flexDirection: 'row', alignItems: 'center', gap: spacing(2.5) },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: { color: sectionAccents.courses.accent, fontSize: 12, fontWeight: '700' },
+  stepLabel: { color: colors.text, fontSize: 14, flex: 1 },
+  firstStepsActions: { gap: spacing(2) },
   columns: { flexDirection: 'row', gap: spacing(6) },
   column: { flex: 1 },
   section: { marginBottom: spacing(6), gap: spacing(3) },

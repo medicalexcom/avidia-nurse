@@ -171,7 +171,7 @@ export function validateGeneratedQuestion(raw: RawGeneratedQuestion): QuestionVa
   // Duplicate options make the interaction ambiguous (spec K).
   const normalizedOptionTexts = raw.options.map((option) => normalizeQuestionText(option.text));
   if (new Set(normalizedOptionTexts).size !== normalizedOptionTexts.length) {
-  reasons.push('options must be distinct');
+    reasons.push('options must be distinct');
   }
 
   // Answer leakage (spec K): the stem must not contain a correct option

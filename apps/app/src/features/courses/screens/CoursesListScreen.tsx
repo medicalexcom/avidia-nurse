@@ -55,19 +55,20 @@ export function CoursesListScreen() {
   const visible = showArchived ? [...active, ...archived] : active;
 
   return (
-    <Screen title="Courses" section="courses" icon="book-outline">
+    <Screen testID="courses-screen" title="Courses" section="courses" icon="book-outline">
       <ErrorBanner message={error} />
       {error ? <SecondaryButton label="Retry" onPress={load} /> : null}
 
       {loading ? (
         <Text style={styles.muted}>Loading your courses…</Text>
       ) : visible.length === 0 && archived.length === 0 ? (
-        <View style={styles.empty}>
+        <View testID="empty-state" style={styles.empty}>
           <Text style={styles.emptyTitle}>No courses yet</Text>
           <Text style={styles.muted}>
             Add the courses you are taking this term to start tracking modules and exam dates.
           </Text>
           <PrimaryButton
+            testID="create-first-course-button"
             label="Create your first course"
             onPress={() => router.push('/course/new')}
           />
@@ -77,11 +78,12 @@ export function CoursesListScreen() {
           <View style={styles.collectionHeader}>
             <View>
               <Text style={styles.collectionEyebrow}>YOUR WORKSPACE</Text>
-              <Text style={styles.collectionTitle}>
+              <Text testID="active-courses-count" style={styles.collectionTitle}>
                 {active.length} {active.length === 1 ? 'active course' : 'active courses'}
               </Text>
             </View>
             <Pressable
+              testID="add-course-button"
               accessibilityRole="button"
               accessibilityLabel="Add course"
               onPress={() => router.push('/course/new')}
@@ -90,13 +92,14 @@ export function CoursesListScreen() {
               <Text style={styles.addButtonLabel}>Add course</Text>
             </Pressable>
           </View>
-          <View style={styles.list}>
+          <View testID="courses-list" style={styles.list}>
             {visible.map((course) => (
               <CourseCard key={course.id} course={course} timezone={timezone} />
             ))}
           </View>
           {archived.length > 0 ? (
             <SecondaryButton
+              testID="toggle-archived-button"
               label={
                 showArchived
                   ? 'Hide archived courses'
@@ -117,6 +120,7 @@ function CourseCard({ course, timezone }: { course: CourseSummary; timezone: str
   const { accent } = sectionAccents.courses;
   return (
     <Pressable
+      testID={`course-card-${course.id}`}
       accessibilityRole="button"
       accessibilityLabel={`Open course ${course.title}`}
       onPress={() => router.push(`/course/${course.id}`)}
@@ -124,7 +128,7 @@ function CourseCard({ course, timezone }: { course: CourseSummary; timezone: str
     >
       <View style={styles.cardHeader}>
         <SectionIcon section="courses" name="book-outline" size={18} />
-        <Text style={styles.cardTitle}>{course.title}</Text>
+        <Text testID={`course-title-${course.id}`} style={styles.cardTitle}>{course.title}</Text>
         {course.status === 'archived' ? <Pill label="Archived" tone="neutral" /> : null}
       </View>
       {course.term ? <Text style={styles.cardMeta}>{course.term}</Text> : null}
@@ -132,7 +136,7 @@ function CourseCard({ course, timezone }: { course: CourseSummary; timezone: str
         {course.module_count === 1 ? '1 module' : `${course.module_count} modules`}
       </Text>
       {next && countdown ? (
-        <Text style={[styles.cardCountdown, { color: accent }]}>
+        <Text testID={`exam-countdown-${course.id}`} style={[styles.cardCountdown, { color: accent }]}>
           {next.title}: {countdown.label}
         </Text>
       ) : (

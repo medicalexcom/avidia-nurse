@@ -10,6 +10,8 @@ import { isCognitiveLevel, isQuestionDifficulty, isQuestionType } from '@avidia/
  * Schema validation here is purely STRUCTURAL. The clinical validation
  * pipeline (validate.ts) then judges each structurally sound question on
  * correctness rules, safety, and distractor quality (spec K/L/N).
+ *
+ * Skill #3: Enhanced for Bloom's Taxonomy cognitive level control.
  */
 
 /** One chunk given to the generator, with its stable id and provenance hint. */

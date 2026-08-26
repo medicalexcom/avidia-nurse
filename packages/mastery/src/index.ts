@@ -6,3 +6,4 @@ export * from './priority';
 export * from './recommend';
 export * from './selectQuestion';
 export * from './prerequisites';
+export * from './spaced-repetition';

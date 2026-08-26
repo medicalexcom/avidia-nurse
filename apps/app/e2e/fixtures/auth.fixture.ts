@@ -13,7 +13,7 @@ export const test = base.extend<AuthFixtures>({
   testEmail: TEST_EMAIL,
   testPassword: TEST_PASSWORD,
 
-  authenticatedPage: async ({ page }, useFixture) => {
+  authenticatedPage: async ({ page }, fixture) => {
     // Navigate to login
     await page.goto('/');
 
@@ -36,7 +36,7 @@ export const test = base.extend<AuthFixtures>({
       await page.waitForNavigation({ url: /\/(app|today)/ });
     }
 
-    await useFixture(page);
+    await fixture(page);
   },
 });
 

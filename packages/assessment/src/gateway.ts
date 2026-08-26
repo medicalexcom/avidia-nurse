@@ -125,8 +125,8 @@ export const QUESTION_GENERATION_SYSTEM_PROMPT = [
   'Vary difficulty (easy/moderate/hard) and cognitive level; tag nursing priority',
   'frameworks (abc, safety, ...) when the question involves prioritization.',
   '',
-  "=== BLOOM'S TAXONOMY COGNITIVE LEVELS (Skill #3) ===",
-  "Map questions to Bloom's cognitive levels to build deeper learning:",
+  '=== BLOOM\'S TAXONOMY COGNITIVE LEVELS (Skill #3) ===',
+  'Map questions to Bloom's cognitive levels to build deeper learning:',
   '  - recall (L1): Remember facts, definitions, terminology',
   '    Example: "What is the normal potassium range?" Answer: 3.5-5.0 mEq/L',
   '  - understanding (L2): Explain, summarize, classify, describe concepts',
@@ -230,23 +230,23 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
     if (bloomsRequest) {
       if (bloomsRequest.targetLevels === 'all') {
         bloomsInstruction =
-          "Mix questions across ALL Bloom's cognitive levels (recall, understanding, application, analysis, evaluation, synthesis) " +
+          'Mix questions across ALL Bloom's cognitive levels (recall, understanding, application, analysis, evaluation, synthesis) ' +
           'to build comprehensive mastery from foundational to deep reasoning.\n';
       } else if (bloomsRequest.targetLevels === 'foundational') {
         bloomsInstruction =
-          "Focus on foundational Bloom's levels: recall (facts, definitions) and understanding (explanation, summary). " +
+          'Focus on foundational Bloom\'s levels: recall (facts, definitions) and understanding (explanation, summary). ' +
           'Build the knowledge foundation before moving to application.\n';
       } else if (bloomsRequest.targetLevels === 'intermediate') {
         bloomsInstruction =
-          "Focus on intermediate Bloom's levels: application (solve problems, make clinical decisions) and analysis (distinguish relationships, identify causes). " +
+          'Focus on intermediate Bloom\'s levels: application (solve problems, make clinical decisions) and analysis (distinguish relationships, identify causes). ' +
           'These questions prepare for clinical reasoning on exams.\n';
       } else if (bloomsRequest.targetLevels === 'advanced') {
         bloomsInstruction =
-          "Focus on advanced Bloom's levels: evaluation (make judgments, defend decisions) and synthesis (combine elements, evaluate alternatives). " +
+          'Focus on advanced Bloom\'s levels: evaluation (make judgments, defend decisions) and synthesis (combine elements, evaluate alternatives). ' +
           'These are mastery-level questions requiring integration of multiple concepts.\n';
       } else if (Array.isArray(bloomsRequest.targetLevels)) {
         const levels = bloomsRequest.targetLevels.join(', ');
-        bloomsInstruction = `Focus on these specific Bloom\'s cognitive levels: ${levels}.\n`;
+        bloomsInstruction = `Focus on these specific Bloom's cognitive levels: ${levels}.\n`;
       }
 
       if (bloomsRequest.segregateByLevel && bloomsRequest.minPerLevel) {
@@ -571,15 +571,13 @@ export class ScriptedQuestionGenerationProvider implements QuestionGenerationPro
                 text: 'Muscle weakness or cramping.',
                 is_correct: false,
                 correct_position: null,
-                rationale:
-                  'While important, neuromuscular effects are managed after stabilization.',
+                rationale: 'While important, neuromuscular effects are managed after stabilization.',
               },
               {
                 text: 'Altered mental status or confusion.',
                 is_correct: true,
                 correct_position: null,
-                rationale:
-                  'Neuro changes indicate systemic involvement requiring urgent intervention.',
+                rationale: 'Neuro changes indicate systemic involvement requiring urgent intervention.',
               },
               {
                 text: 'Mild elevated or decreased value on single lab.',
@@ -609,7 +607,8 @@ export class ScriptedQuestionGenerationProvider implements QuestionGenerationPro
               `and patient-centered care principles applied to ${concept.name}.`,
             options: [
               {
-                text: 'The most conservative approach that avoids medication unless symptoms develop.',
+                text:
+                  'The most conservative approach that avoids medication unless symptoms develop.',
                 is_correct: true,
                 correct_position: null,
                 rationale:
@@ -619,8 +618,7 @@ export class ScriptedQuestionGenerationProvider implements QuestionGenerationPro
                 text: 'The most aggressive intervention regardless of symptoms.',
                 is_correct: false,
                 correct_position: null,
-                rationale:
-                  'Aggressive treatment of asymptomatic conditions increases risk without benefit.',
+                rationale: 'Aggressive treatment of asymptomatic conditions increases risk without benefit.',
               },
               {
                 text: 'Whichever option the previous nurse used.',

@@ -1,3 +1,4 @@
+export * from './blooms';
 export * from './evalFixtures';
 export * from './fingerprint';
 export * from './gateway';

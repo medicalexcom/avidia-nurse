@@ -74,7 +74,22 @@ export function CoursesListScreen() {
         </View>
       ) : (
         <>
-          <PrimaryButton label="Add course" onPress={() => router.push('/course/new')} />
+          <View style={styles.collectionHeader}>
+            <View>
+              <Text style={styles.collectionEyebrow}>YOUR WORKSPACE</Text>
+              <Text style={styles.collectionTitle}>
+                {active.length} {active.length === 1 ? 'active course' : 'active courses'}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add course"
+              onPress={() => router.push('/course/new')}
+              style={styles.addButton}
+            >
+              <Text style={styles.addButtonLabel}>Add course</Text>
+            </Pressable>
+          </View>
           <View style={styles.list}>
             {visible.map((course) => (
               <CourseCard key={course.id} course={course} timezone={timezone} />
@@ -131,12 +146,36 @@ const styles = StyleSheet.create({
   muted: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
   empty: { gap: spacing(3), marginTop: spacing(4) },
   emptyTitle: { ...type.title, color: colors.text },
+  collectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing(1),
+  },
+  collectionEyebrow: {
+    color: sectionAccents.courses.accent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.15,
+    marginBottom: spacing(1),
+  },
+  collectionTitle: { ...type.title, color: colors.text, letterSpacing: -0.3 },
+  addButton: {
+    backgroundColor: sectionAccents.courses.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing(2.5),
+    paddingHorizontal: spacing(3),
+    ...shadow.sm,
+  },
+  addButtonLabel: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   list: { gap: spacing(3), marginTop: spacing(4), marginBottom: spacing(4) },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing(4),
     gap: spacing(1),
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadow.sm,
   },
   cardPressed: { backgroundColor: colors.surfaceSunken },

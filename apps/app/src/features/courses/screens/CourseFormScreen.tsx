@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { validateCourse } from '@avidia/domain';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { getSupabase } from '../../../lib/supabase';
-import { ErrorBanner, Field, PrimaryButton, Screen, SecondaryButton } from '../../../ui/components';
-import { colors, spacing } from '../../../ui/theme';
+import {
+  Card,
+  ErrorBanner,
+  Field,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+  SectionIcon,
+} from '../../../ui/components';
+import { colors, sectionAccents, spacing } from '../../../ui/theme';
 import { createCourse, fetchOwnCourse, updateOwnCourse } from '../coursesApi';
 
 /**
@@ -86,6 +94,21 @@ export function CourseFormScreen({ courseId }: { courseId?: string }) {
         <Text style={styles.muted}>Loading…</Text>
       ) : (
         <>
+          {!editing ? (
+            <Card style={styles.introCard}>
+              <View style={styles.introHeader}>
+                <SectionIcon section="courses" name="school-outline" size={20} />
+                <View style={styles.introCopy}>
+                  <Text style={styles.introEyebrow}>STEP 1 OF 3</Text>
+                  <Text style={styles.introTitle}>Set up your study space</Text>
+                </View>
+              </View>
+              <Text style={styles.muted}>
+                Start with the course you are taking now. Next, you can add your materials and set
+                an exam date when you&apos;re ready.
+              </Text>
+            </Card>
+          ) : null}
           {errors.map((message) => (
             <Text key={message} style={styles.fieldError}>
               {message}
@@ -124,4 +147,15 @@ export function CourseFormScreen({ courseId }: { courseId?: string }) {
 const styles = StyleSheet.create({
   muted: { color: colors.textMuted, fontSize: 15 },
   fieldError: { color: colors.danger, fontSize: 14, marginBottom: spacing(2) },
+  introCard: { marginBottom: spacing(5), gap: spacing(3) },
+  introHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing(3) },
+  introCopy: { flex: 1 },
+  introEyebrow: {
+    color: sectionAccents.courses.accent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: spacing(0.5),
+  },
+  introTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
 });

@@ -142,6 +142,16 @@ describe('CoursesListScreen', () => {
 });
 
 describe('CourseDetailScreen', () => {
+  it('guides a newly created course to its first useful study action', async () => {
+    mocked(modulesApi.listModules).mockResolvedValue([]);
+    mocked(examsApi.listExams).mockResolvedValue([]);
+    await render(<CourseDetailScreen courseId="course-1" />);
+    expect(await screen.findByText('Make this course ready to study')).toBeTruthy();
+    expect(screen.getByText('Upload notes, slides, or a syllabus')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Add course material'));
+    expect(mockRouter.push).toHaveBeenCalledWith('/course/course-1/add-material');
+  });
+
   it('adds a module scoped to the course with the next sequence', async () => {
     mocked(modulesApi.createModule).mockResolvedValue({ ...module1, id: 'm2' });
     await render(<CourseDetailScreen courseId="course-1" />);

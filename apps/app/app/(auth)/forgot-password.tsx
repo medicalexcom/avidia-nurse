@@ -45,13 +45,14 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <View>
+    <View testID="auth-container">
       <Text style={styles.heading}>Reset your password</Text>
       <Text style={styles.sub}>
         Enter the email address on your account and we&apos;ll send you a link to choose a new
         password.
       </Text>
       <ErrorBanner
+        testID="error-message"
         message={
           backendUnavailable
             ? 'Password reset is not available right now. Please try again later or contact support.'
@@ -60,6 +61,7 @@ export default function ForgotPasswordScreen() {
       />
       <Field
         label="Email"
+        testID="reset-email-input"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -68,6 +70,7 @@ export default function ForgotPasswordScreen() {
         placeholder="you@example.com"
       />
       <PrimaryButton
+        testID="send-reset-link-button"
         label="Send reset link"
         onPress={onSubmit}
         busy={busy}

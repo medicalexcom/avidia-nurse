@@ -1,6 +1,25 @@
 import { MaterialExtension } from '@avidia/domain';
 
 /**
+ * Semantic context for chunks (Skill #2: relationship preservation).
+ * Tracks concept relationships and context chains within chunks.
+ */
+export interface SemanticContext {
+  /** Concept terms extracted from this chunk (used for cross-referencing). */
+  containsConceptTerms?: string[];
+  /** Whether chunk contains causal/relationship markers (prerequisite chain). */
+  hasRelationshipChain?: boolean;
+  /** When split: which part of the original chunk is this (1-based). */
+  partIndex?: number;
+  /** Total parts when split (>1 indicates a split chunk). */
+  totalParts?: number;
+  /** Heading hierarchy for hierarchical context (DOCX/TXT). */
+  headingPath?: string[];
+  /** Estimated reading level (basic/intermediate/advanced). */
+  readingLevel?: 'basic' | 'intermediate' | 'advanced';
+}
+
+/**
  * Usable provenance carried by every chunk (spec F). Mirrors what the product
  * must be able to render: "Adult Health Module 3 — slide 17". Never discarded
  * after embedding.
@@ -36,6 +55,8 @@ export interface RagChunk {
   /** Inclusive document_sections.sequence range this chunk was built from. */
   sectionStart: number;
   sectionEnd: number;
+  /** NEW: Semantic context for relationships and cross-referencing. */
+  semanticContext?: SemanticContext;
 }
 
 /** Version metadata stored with every embedded chunk (spec B/J). */
@@ -77,6 +98,8 @@ export interface RetrievedChunk {
   lexicalRank: number;
   /** Reciprocal-rank-fusion score used for the final ordering. */
   score: number;
+  /** NEW: Semantic context (for context window optimization in retrieval). */
+  semanticContext?: SemanticContext;
 }
 
 export interface SearchRequest {
@@ -85,6 +108,8 @@ export interface SearchRequest {
   topK?: number;
   minSimilarity?: number;
   documentId?: string;
+  /** NEW: Preserve concept relationships in results (optional). */
+  preserveContext?: boolean;
 }
 
 /**
@@ -100,5 +125,6 @@ export interface SearchBackend {
     topK: number;
     minSimilarity: number;
     documentId: string | null;
+    preserveContext?: boolean;
   }): Promise<RetrievedChunk[]>;
 }

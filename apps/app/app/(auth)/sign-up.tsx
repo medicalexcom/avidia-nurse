@@ -56,10 +56,11 @@ export default function SignUpScreen() {
   }
 
   return (
-    <View>
+    <View testID="auth-container">
       <Text style={styles.heading}>Create your account</Text>
       <Text style={styles.sub}>Start studying smarter for nursing school.</Text>
       <ErrorBanner
+        testID="error-message"
         message={
           backendUnavailable
             ? 'Sign-up is not available right now. Please try again later or contact support.'
@@ -68,6 +69,7 @@ export default function SignUpScreen() {
       />
       <Field
         label="Email"
+        testID="email-input"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -77,6 +79,7 @@ export default function SignUpScreen() {
       />
       <Field
         label="Password"
+        testID="password-input"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -85,6 +88,7 @@ export default function SignUpScreen() {
       />
       <Field
         label="Confirm password"
+        testID="confirm-password-input"
         value={confirm}
         onChangeText={setConfirm}
         secureTextEntry
@@ -92,6 +96,7 @@ export default function SignUpScreen() {
         placeholder="Repeat your password"
       />
       <PrimaryButton
+        testID="submit-button"
         label="Create account"
         onPress={onSubmit}
         busy={busy}

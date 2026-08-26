@@ -45,9 +45,13 @@ jobs:
           from pathlib import Path
 
           gateway = Path('packages/assessment/src/gateway.ts')
-          text = gateway.read_text()
-          text = text.replace(r"Bloom\'s cognitive levels", "Bloom's cognitive levels")
-          gateway.write_text(text)
+          lines = gateway.read_text().splitlines()
+          gateway.write_text(
+              '\n'.join(
+                  '  "Map questions to Bloom\'s cognitive levels to build deeper learning:",' if "Map questions to Bloom" in line else line
+                  for line in lines
+              ) + '\n'
+          )
 
           questions = Path('packages/domain/src/questions.ts')
           text = questions.read_text()

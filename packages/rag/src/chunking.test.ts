@@ -1,6 +1,13 @@
 import { ExtractedSection } from '@avidia/domain';
 
-import { chunkSections, estimateTokens, splitTable, splitWithOverlap } from './chunking';
+import {
+  chunkSections,
+  estimateTokens,
+  splitTable,
+  splitWithOverlap,
+  CONCEPT_BOUNDARY_MARKERS,
+  RELATIONSHIP_MARKERS,
+} from './chunking';
 
 function section(overrides: Partial<ExtractedSection>): ExtractedSection {
   return {
@@ -52,6 +59,49 @@ describe('splitWithOverlap', () => {
     const parts = splitWithOverlap('z'.repeat(500), 120);
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join('')).toHaveLength(500);
+  });
+
+  it('respects concept boundary markers when splitting', () => {
+    // Create text with a concept boundary marker near the end of the first chunk
+    const beforeBoundary = 'Glucose Metabolism: The basic biochemical process...\n'.repeat(60);
+    const boundaryMarker = `${CONCEPT_BOUNDARY_MARKERS[0]!}: `;
+    const afterBoundary = 'DKA pathophysiology is complex.\n'.repeat(60);
+
+    const text = beforeBoundary + boundaryMarker + afterBoundary;
+    const parts = splitWithOverlap(text, 120, true); // Allow context bonus
+
+    // Should create multiple parts due to concept boundary
+    expect(parts.length).toBeGreaterThan(1);
+
+    // The boundary marker should appear in the later parts, not split awkwardly
+    const allParts = parts.join('\n');
+    expect(allParts).toContain(boundaryMarker);
+  });
+
+  it('preserves relationship markers in chunks', () => {
+    const textWithRelationship = `
+      Hyperkalemia causes serious cardiac arrhythmias.
+      This leads to sudden cardiac death if untreated.
+      Therefore, potassium must be corrected urgently.
+    `.repeat(100);
+
+    const parts = splitWithOverlap(textWithRelationship);
+    expect(parts.length).toBeGreaterThan(0);
+
+    // All relationship markers should appear somewhere in the chunks
+    for (const marker of ['leads to', 'Therefore']) {
+      const found = parts.some((part) => part.includes(marker));
+      expect(found).toBe(true);
+    }
+  });
+
+  it('allows context bonus to exceed normal chunk size for concept preservation', () => {
+    const textWithBoundary = 'Content '.repeat(500); // Very long text
+    const partsWithBonus = splitWithOverlap(textWithBoundary, 120, true);
+    const partsWithoutBonus = splitWithOverlap(textWithBoundary, 120, false);
+
+    // With bonus, should have fewer or equal parts (larger chunks allowed)
+    expect(partsWithBonus.length).toBeLessThanOrEqual(partsWithoutBonus.length);
   });
 });
 
@@ -152,6 +202,37 @@ describe('chunkSections — PPTX', () => {
     const slide2 = chunks[3]!;
     expect(slide2.sourceLocator).toEqual({ type: 'pptx', slide: 2, title: 'COPD' });
   });
+
+  it('includes semantic context for slides with relationship chains', () => {
+    const semanticSections: ExtractedSection[] = [
+      section({
+        sectionType: 'slide_title',
+        sequence: 0,
+        slideNumber: 1,
+        heading: 'DKA Pathophysiology',
+        content: 'Diabetic Ketoacidosis',
+      }),
+      section({
+        sectionType: 'slide_body',
+        sequence: 1,
+        slideNumber: 1,
+        heading: 'DKA Pathophysiology',
+        content: `Glucose Metabolism leads to insulin deficiency, which causes hyperglycemia.
+                  This results in osmotic diuresis. Therefore, severe dehydration occurs.
+                  As a result, electrolyte imbalances develop.`,
+      }),
+    ];
+
+    const chunks = chunkSections(semanticSections, 'pptx');
+    expect(chunks.length).toBeGreaterThan(0);
+
+    // Should have semantic context tracking relationship chains
+    const firstChunk = chunks[0]!;
+    expect(firstChunk.semanticContext).toBeDefined();
+    expect(firstChunk.semanticContext?.hasRelationshipChain).toBe(true);
+    expect(firstChunk.semanticContext?.containsConceptTerms).toBeDefined();
+    expect(firstChunk.semanticContext?.containsConceptTerms).toContain('Glucose Metabolism');
+  });
 });
 
 describe('chunkSections — PDF', () => {
@@ -196,6 +277,28 @@ describe('chunkSections — PDF', () => {
     expect(chunks[0]!.content).toBe('First half.\nSecond half.');
     expect(chunks[0]!.sectionStart).toBe(0);
     expect(chunks[0]!.sectionEnd).toBe(1);
+  });
+
+  it('preserves semantic context for PDF chunks with complex content', () => {
+    const complexContent = `
+      Pathophysiology of Acute Kidney Injury:
+      
+      Acute kidney injury causes rapid decline in glomerular filtration.
+      This leads to accumulation of nitrogenous waste.
+      Therefore, hyperkalemia develops. As a result, cardiac arrhythmias may occur.
+      
+      Clinical manifestations and management strategies.
+    `;
+
+    const chunks = chunkSections(
+      [section({ sectionType: 'page_text', sequence: 0, pageNumber: 1, content: complexContent })],
+      'pdf'
+    );
+
+    expect(chunks.length).toBeGreaterThan(0);
+    const firstChunk = chunks[0]!;
+    expect(firstChunk.semanticContext).toBeDefined();
+    expect(firstChunk.semanticContext?.hasRelationshipChain).toBe(true);
   });
 });
 
@@ -272,6 +375,114 @@ describe('chunkSections — DOCX/TXT heading flow', () => {
     expect(chunks).toHaveLength(1);
     expect(chunks[0]!.sourceLocator).toEqual({ type: 'txt', sectionIndex: 0 });
   });
+
+  it('respects concept boundary markers in heading flow', () => {
+    const chunks = chunkSections(
+      [
+        section({ sectionType: 'heading', sequence: 0, content: 'Foundation: Glucose Metabolism' }),
+        section({
+          sectionType: 'paragraph',
+          sequence: 1,
+          content: 'Glucose is metabolized via glycolysis and oxidative phosphorylation.',
+        }),
+        section({
+          sectionType: 'heading',
+          sequence: 2,
+          content: `${CONCEPT_BOUNDARY_MARKERS[0]!} Diabetic Ketoacidosis`,
+        }),
+        section({
+          sectionType: 'paragraph',
+          sequence: 3,
+          content: 'DKA occurs when insulin is deficient or ineffective.',
+        }),
+      ],
+      'docx'
+    );
+
+    // Should split when boundary marker is encountered in heading
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks[0]!.sourceLocator.heading).toContain('Foundation');
+  });
+});
+
+describe('chunkSections — semantic context extraction', () => {
+  it('extracts concept terms from chunk content', () => {
+    const chunks = chunkSections(
+      [
+        section({
+          sectionType: 'page_text',
+          sequence: 0,
+          pageNumber: 1,
+          content: `
+            Diabetic Ketoacidosis and Hyperglycemia are serious Metabolic Disorders.
+            Pathophysiology involves Insulin Deficiency and Ketone Production.
+            Clinical Assessment requires Laboratory Testing and vital sign monitoring.
+          `,
+        }),
+      ],
+      'pdf'
+    );
+
+    expect(chunks.length).toBeGreaterThan(0);
+    const chunk = chunks[0]!;
+    expect(chunk.semanticContext?.containsConceptTerms).toBeDefined();
+
+    // Should contain capitalized concept terms
+    const terms = chunk.semanticContext?.containsConceptTerms || [];
+    const foundConcepts = terms.filter((t) =>
+      ['Diabetic', 'Ketoacidosis', 'Hyperglycemia', 'Metabolic', 'Disorder'].includes(t)
+    );
+    expect(foundConcepts.length).toBeGreaterThan(0);
+  });
+
+  it('identifies relationship chains in content', () => {
+    const relationshipContent = `
+      Hyperkalemia causes serious cardiac effects.
+      This leads to life-threatening arrhythmias.
+      Therefore, urgent potassium correction is necessary.
+      As a result, ECG monitoring is required.
+    `;
+
+    const chunks = chunkSections(
+      [
+        section({
+          sectionType: 'page_text',
+          sequence: 0,
+          pageNumber: 1,
+          content: relationshipContent,
+        }),
+      ],
+      'pdf'
+    );
+
+    expect(chunks.length).toBeGreaterThan(0);
+    const chunk = chunks[0]!;
+    expect(chunk.semanticContext?.hasRelationshipChain).toBe(true);
+  });
+
+  it('tracks part indices for split chunks', () => {
+    const largeContent = 'Content line here.\n'.repeat(300);
+    const chunks = chunkSections(
+      [
+        section({
+          sectionType: 'page_text',
+          sequence: 0,
+          pageNumber: 1,
+          content: largeContent,
+        }),
+      ],
+      'pdf'
+    );
+
+    // Should have multiple parts
+    expect(chunks.length).toBeGreaterThan(1);
+
+    // Each part should track its index and total parts
+    chunks.forEach((chunk, index) => {
+      expect(chunk.semanticContext?.partIndex).toBe(index);
+      expect(chunk.semanticContext?.totalParts).toBe(chunks.length);
+    });
+  });
 });
 
 describe('chunkSections — determinism and hygiene', () => {
@@ -294,5 +505,46 @@ describe('chunkSections — determinism and hygiene', () => {
         'pdf'
       )
     ).toEqual([]);
+  });
+
+  it('preserves semantic context across deterministic re-chunking', () => {
+    const sections = [
+      section({
+        sectionType: 'page_text',
+        sequence: 0,
+        pageNumber: 1,
+        content: `
+          Glucose Metabolism leads to Insulin Secretion.
+          This results in glucose uptake. Therefore, blood glucose decreases.
+        `,
+      }),
+    ];
+
+    const a = chunkSections(sections, 'pdf');
+    const b = chunkSections(sections, 'pdf');
+
+    // Semantic context should be identical on re-chunking
+    expect(a[0]!.semanticContext).toEqual(b[0]!.semanticContext);
+  });
+});
+
+describe('Concept boundary and relationship marker constants', () => {
+  it('provides meaningful concept boundary markers', () => {
+    expect(CONCEPT_BOUNDARY_MARKERS.length).toBeGreaterThan(0);
+    expect(CONCEPT_BOUNDARY_MARKERS).toContain('prerequisite:');
+    expect(CONCEPT_BOUNDARY_MARKERS).toContain('causes of');
+  });
+
+  it('provides meaningful relationship markers', () => {
+    expect(RELATIONSHIP_MARKERS.length).toBeGreaterThan(0);
+    expect(RELATIONSHIP_MARKERS).toContain('leads to');
+    expect(RELATIONSHIP_MARKERS).toContain('therefore');
+  });
+
+  it('has non-overlapping marker sets', () => {
+    const allMarkers = new Set([...CONCEPT_BOUNDARY_MARKERS, ...RELATIONSHIP_MARKERS]);
+    expect(allMarkers.size).toBe(
+      CONCEPT_BOUNDARY_MARKERS.length + RELATIONSHIP_MARKERS.length
+    );
   });
 });

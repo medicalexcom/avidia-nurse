@@ -1,5 +1,6 @@
 import type { CognitiveLevel, ConfidenceLevel, QuestionDifficulty } from '@avidia/domain';
 
+/** Version of the mastery-update algorithm. */
 export const MASTERY_ALGORITHM_VERSION = 1;
 export const MASTERY_MIN = 0;
 export const MASTERY_MAX = 1;

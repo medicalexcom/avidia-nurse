@@ -32,11 +32,14 @@ import {
   type MasteryAggregate,
 } from '@avidia/mastery';
 
-import { chunkSections, estimateTokens, splitWithOverlap, MAX_CHUNK_TOKENS } from '@avidia/rag';
 import {
+  chunkSections,
+  estimateTokens,
+  splitWithOverlap,
+  MAX_CHUNK_TOKENS,
   CONCEPT_BOUNDARY_MARKERS,
   RELATIONSHIP_MARKERS,
-} from '@avidia/rag/src/chunking';
+} from '@avidia/rag';
 
 const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * 4;
 

@@ -1,5 +1,7 @@
 export {
   MAX_CHUNK_TOKENS,
+  CONCEPT_BOUNDARY_MARKERS,
+  RELATIONSHIP_MARKERS,
   chunkSections,
   estimateTokens,
   splitTable,

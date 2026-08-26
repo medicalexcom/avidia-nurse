@@ -7,6 +7,8 @@
  * frameworks, feedback reasons — and their student-facing labels. Generation,
  * validation, scoring, and persistence live in `@avidia/assessment` and the
  * worker; screens consume these constants and never re-declare them.
+ *
+ * Skill #3: Enhanced with Bloom's Taxonomy cognitive progression.
  */
 
 /**
@@ -67,12 +69,26 @@ export function isQuestionDifficulty(value: string): value is QuestionDifficulty
  * Cognitive level (spec E): extensible classification used to diversify
  * assessments and, later, adaptive selection. Explicitly imperfect — an
  * estimate, never a claim of psychometric rigor.
+ *
+ * Skill #3: Enhanced with full Bloom's Taxonomy levels for progressive learning.
+ * - recall (L1): Remember facts, definitions, terminology
+ * - understanding (L2): Explain, summarize, classify, describe
+ * - application (L3): Apply concepts to new situations, solve problems
+ * - analysis (L4): Analyze parts, distinguish relationships, identify causes
+ * - evaluation (L5): Make judgments based on criteria, defend positions (NEW)
+ * - synthesis (L6): Combine elements into new patterns (NEW, optional/advanced)
+ * - prioritization (existing): Nursing-specific ordering and decision-making
+ *
+ * Progression: recall → understanding → application → analysis → evaluation
+ * Prioritization overlaps analysis/evaluation for nursing-specific scenarios.
  */
 export const COGNITIVE_LEVELS = [
   'recall',
   'understanding',
   'application',
   'analysis',
+  'evaluation',
+  'synthesis',
   'prioritization',
 ] as const;
 
@@ -83,11 +99,38 @@ export const COGNITIVE_LEVEL_LABELS: Record<CognitiveLevel, string> = {
   understanding: 'Understanding',
   application: 'Application',
   analysis: 'Analysis',
+  evaluation: 'Evaluation',
+  synthesis: 'Synthesis',
   prioritization: 'Prioritization',
 };
 
 export function isCognitiveLevel(value: string): value is CognitiveLevel {
   return (COGNITIVE_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * Skill #3: Bloom's Taxonomy level grouping for progressive learning.
+ * Maps levels to study phases:
+ * - foundational: recall + understanding (build knowledge base)
+ * - intermediate: application + analysis (clinical reasoning)
+ * - advanced: evaluation + synthesis (mastery/deep reasoning)
+ */
+export const BLOOMS_LEVEL_GROUPS = {
+  foundational: ['recall', 'understanding'] as const,
+  intermediate: ['application', 'analysis'] as const,
+  advanced: ['evaluation', 'synthesis'] as const,
+};
+
+export type BlomsLevelGroup = keyof typeof BLOOMS_LEVEL_GROUPS;
+
+export function isBlomsLevelGroup(value: string): value is BlomsLevelGroup {
+  return value in BLOOMS_LEVEL_GROUPS;
+}
+
+export function getCognitiveLevelGroup(level: CognitiveLevel): BlomsLevelGroup {
+  if (BLOOMS_LEVEL_GROUPS.foundational.includes(level as any)) return 'foundational';
+  if (BLOOMS_LEVEL_GROUPS.intermediate.includes(level as any)) return 'intermediate';
+  return 'advanced';
 }
 
 /**
@@ -152,6 +195,8 @@ export type SessionType = (typeof SESSION_TYPES)[number];
  * Nursing priority frameworks (spec O; Playbook §11 priority_framework).
  * Metadata on questions that involve prioritization — context determines the
  * answer, never one simplistic rule.
+ *
+ * Skill #3: Extended list for comprehensive clinical reasoning coverage.
  */
 export const PRIORITY_FRAMEWORKS = [
   'abc',
@@ -160,6 +205,13 @@ export const PRIORITY_FRAMEWORKS = [
   'unstable_vs_stable',
   'actual_vs_potential',
   'least_restrictive',
+  'maslow',
+  'delegation',
+  'ati_prioritization',
+  'infection_control',
+  'pharmacology',
+  'lab_interpretation',
+  'ethics',
 ] as const;
 
 export type PriorityFramework = (typeof PRIORITY_FRAMEWORKS)[number];
@@ -171,6 +223,13 @@ export const PRIORITY_FRAMEWORK_LABELS: Record<PriorityFramework, string> = {
   unstable_vs_stable: 'Unstable vs stable',
   actual_vs_potential: 'Actual vs potential',
   least_restrictive: 'Least restrictive intervention',
+  maslow: "Maslow's hierarchy of needs",
+  delegation: 'Delegation and scope of practice',
+  ati_prioritization: 'ATI prioritization framework',
+  infection_control: 'Infection control and prevention',
+  pharmacology: 'Pharmacology and drug interactions',
+  lab_interpretation: 'Lab value interpretation',
+  ethics: 'Ethical decision-making',
 };
 
 export function isPriorityFramework(value: string): value is PriorityFramework {
@@ -213,3 +272,23 @@ export const QUESTION_FEEDBACK_REASON_LABELS: Record<QuestionFeedbackReason, str
  */
 export const QUESTION_GENERATION_STATUSES = ['pending', 'generating', 'ready', 'failed'] as const;
 export type QuestionGenerationStatus = (typeof QUESTION_GENERATION_STATUSES)[number];
+
+/**
+ * Skill #3: Question bank statistics and metadata for adaptive selection.
+ */
+export interface QuestionBankStats {
+  totalQuestions: number;
+  byDifficulty: { [K in QuestionDifficulty]: number };
+  byCognitiveLevel: { [K in CognitiveLevel]: number };
+  courseGroundedCount: number;
+  generalKnowledgeCount: number;
+}
+
+/**
+ * Skill #3: Mastery-appropriate question characteristics for study.
+ */
+export interface MasteryTargetCharacteristics {
+  difficulties: QuestionDifficulty[];
+  cognitiveLevels: CognitiveLevel[];
+  speedVsAccuracy: 'balanced' | 'speed' | 'accuracy';
+}

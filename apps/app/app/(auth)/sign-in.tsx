@@ -26,10 +26,11 @@ export default function SignInScreen() {
   };
 
   return (
-    <View>
+    <View testID="auth-container">
       <Text style={styles.heading}>Welcome back</Text>
       <Text style={styles.sub}>Sign in to continue studying.</Text>
       <ErrorBanner
+        testID="error-message"
         message={
           backendUnavailable
             ? 'Sign-in is not available right now. Please try again later or contact support.'
@@ -38,6 +39,7 @@ export default function SignInScreen() {
       />
       <Field
         label="Email"
+        testID="email-input"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -47,6 +49,7 @@ export default function SignInScreen() {
       />
       <Field
         label="Password"
+        testID="password-input"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -54,6 +57,7 @@ export default function SignInScreen() {
         placeholder="Your password"
       />
       <PrimaryButton
+        testID="submit-button"
         label="Sign in"
         onPress={onSubmit}
         busy={busy}
@@ -66,7 +70,7 @@ export default function SignInScreen() {
       </Text>
       <Text style={styles.footer}>
         New to Avidia Nurse?{' '}
-        <Link href="/sign-up" style={styles.link}>
+        <Link testID="sign-up-link" href="/sign-up" style={styles.link}>
           Create an account
         </Link>
       </Text>

@@ -4,5 +4,6 @@ export * from './mastery';
 export * from './materials';
 export * from './questions';
 export * from './sections';
+export * from './spaced-repetition';
 export * from './time';
 export * from './validation';

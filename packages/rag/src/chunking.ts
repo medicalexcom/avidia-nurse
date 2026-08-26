@@ -26,7 +26,7 @@ const MAX_OVERLAP_CHARS = 240;
  * These phrases signal "this is likely a new major concept" or prerequisite relationship.
  */
 export const CONCEPT_BOUNDARY_MARKERS = [
-  'first, let\'s review',
+  "first, let's review",
   'before we discuss',
   'you must understand',
   'prerequisite:',
@@ -118,9 +118,10 @@ function extractConceptTerms(text: string): string[] {
   const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
   terms.push(...matches);
   // Common medical terms we care about
-  const medicalTerms = text.match(
-    /\b(syndrome|disease|disorder|metabolism|pathophysiology|mechanism|complication|symptom|sign|assessment|intervention|medication|drug|treatment|therapy|diagnosis|diagnostic|clinical|nurse|patient)\b/gi
-  ) || [];
+  const medicalTerms =
+    text.match(
+      /\b(syndrome|disease|disorder|metabolism|pathophysiology|mechanism|complication|symptom|sign|assessment|intervention|medication|drug|treatment|therapy|diagnosis|diagnostic|clinical|nurse|patient)\b/gi
+    ) || [];
   terms.push(...medicalTerms);
   return [...new Set(terms)];
 }
@@ -280,13 +281,8 @@ function chunkPptx(sections: readonly ExtractedSection[], b: Builder): void {
 
     for (const table of slideSections.filter((s) => s.sectionType === 'table')) {
       const content = title ? `${title}\n${table.content}` : table.content;
-      pushSplit(
-        b,
-        content,
-        { ...base, table: true },
-        table.sequence,
-        table.sequence,
-        (text) => splitTable(text)
+      pushSplit(b, content, { ...base, table: true }, table.sequence, table.sequence, (text) =>
+        splitTable(text)
       );
     }
 
@@ -367,7 +363,8 @@ function chunkHeadingFlow(
     }
 
     // Check if adding this section would exceed budget OR hit a concept boundary
-    const wouldExceedBudget = groupChars + section.content.length > MAX_CHUNK_CHARS && group.length > 0;
+    const wouldExceedBudget =
+      groupChars + section.content.length > MAX_CHUNK_CHARS && group.length > 0;
     const hasBoundaryMarker = hasConceptBoundary(section.content);
 
     if ((wouldExceedBudget || hasBoundaryMarker) && group.length > 0) {

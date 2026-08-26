@@ -1102,7 +1102,9 @@ function QuestionCard({
         <Text style={styles.typeBadge}>{QUESTION_TYPE_LABELS[question.question_type]}</Text>
         <Text style={styles.sourceBadge}>{QUESTION_SOURCE_TYPE_LABELS[question.source_type]}</Text>
       </View>
-      <Text testID="question-text" style={styles.stem}>{question.stem}</Text>
+      <Text testID="question-text" style={styles.stem}>
+        {question.stem}
+      </Text>
 
       {question.question_type === 'numeric_calculation' ? (
         <TextInput
@@ -1197,7 +1199,12 @@ function QuestionCard({
       ) : null}
 
       {!locked ? (
-        <PrimaryButton testID="submit-answer-button" label="Submit answer" onPress={submit} disabled={!canSubmit} />
+        <PrimaryButton
+          testID="submit-answer-button"
+          label="Submit answer"
+          onPress={submit}
+          disabled={!canSubmit}
+        />
       ) : (
         <View testID="session-summary" style={styles.resultPanel}>
           <Text style={result.is_correct ? styles.verdictCorrect : styles.verdictIncorrect}>

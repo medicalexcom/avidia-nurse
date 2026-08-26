@@ -213,7 +213,14 @@ export function extractionJsonSchema(
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['source', 'target', 'type', 'chunk_index', 'prerequisite_strength', 'is_prerequisite'],
+          required: [
+            'source',
+            'target',
+            'type',
+            'chunk_index',
+            'prerequisite_strength',
+            'is_prerequisite',
+          ],
           properties: {
             source: { type: 'string' },
             target: { type: 'string' },

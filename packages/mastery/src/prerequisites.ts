@@ -65,7 +65,9 @@ export function checkPrerequisites(
   prerequisites: ConceptPrerequisiteRelationship[],
   masteryByConceptId: Map<string, MasteryAggregate | null>
 ): PrerequisiteCheckResult {
-  const prereqsForTarget = prerequisites.filter((r) => r.targetConceptId === targetConceptId && r.isPrerequisite);
+  const prereqsForTarget = prerequisites.filter(
+    (r) => r.targetConceptId === targetConceptId && r.isPrerequisite
+  );
 
   if (prereqsForTarget.length === 0) {
     return { isSatisfied: true, unsatisfiedPrerequisites: [], blockingPrerequisites: [] };
@@ -184,7 +186,11 @@ export function topologicalSortByPrerequisites(
 
   // Build graph: prerequisite → dependent
   for (const rel of relationships) {
-    if (rel.isPrerequisite && conceptIds.includes(rel.sourceConceptId) && conceptIds.includes(rel.targetConceptId)) {
+    if (
+      rel.isPrerequisite &&
+      conceptIds.includes(rel.sourceConceptId) &&
+      conceptIds.includes(rel.targetConceptId)
+    ) {
       const list = adjacencyList.get(rel.sourceConceptId) || [];
       if (!list.includes(rel.targetConceptId)) {
         list.push(rel.targetConceptId);

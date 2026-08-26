@@ -232,6 +232,7 @@ export function SectionIcon({
   size?: number;
 }) {
   const { accent, soft } = sectionAccents[section];
+  const icon = name;
   const box = size + 20;
   return (
     <View

@@ -8,32 +8,6 @@ test.describe('Mastery Engine Integration', () => {
   });
 
   test('should update mastery after answering questions', async ({ authenticatedPage }) => {
-    // Get initial mastery state from analytics if available
-    const analyticsTab = authenticatedPage.locator('[data-testid="analytics-tab"]');
-    let initialMasteryStates: Record<string, string> = {};
-
-    if (await analyticsTab.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await analyticsTab.click();
-      await authenticatedPage.waitForTimeout(1000);
-
-      // Extract concept mastery states
-      const masteryItems = authenticatedPage.locator('[data-testid="mastery-item"]');
-      const count = await masteryItems.count();
-
-      for (let i = 0; i < Math.min(count, 3); i++) {
-        const item = masteryItems.nth(i);
-        const conceptName = await item.locator('[data-testid="concept-name"]').textContent();
-        const masteryState = await item.locator('[data-testid="mastery-state"]').textContent();
-
-        if (conceptName) {
-          initialMasteryStates[conceptName] = masteryState || 'unknown';
-        }
-      }
-
-      // Go back to today view
-      await authenticatedPage.goto('/app/today');
-    }
-
     // Complete a study session
     await authenticatedPage.click('[data-testid="start-today-button"]');
     await authenticatedPage.click('[data-testid="time-option-20-minutes"]');
@@ -46,7 +20,7 @@ test.describe('Mastery Engine Integration', () => {
         });
         await authenticatedPage.click('[data-testid="answer-option-0"]');
         await authenticatedPage.waitForTimeout(300);
-      } catch (e) {
+      } catch {
         // Session ended
         break;
       }
@@ -94,7 +68,7 @@ test.describe('Mastery Engine Integration', () => {
         }
 
         await authenticatedPage.waitForTimeout(300);
-      } catch (e) {
+      } catch {
         break;
       }
     }

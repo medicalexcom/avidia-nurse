@@ -114,7 +114,11 @@ export function AccountSection() {
     <View style={styles.section} testID="account-section">
       <Text style={styles.heading}>Subscription & account</Text>
       <ErrorBanner message={error} testID="account-error" />
-      {notice ? <Text testID="account-notice" style={styles.notice}>{notice}</Text> : null}
+      {notice ? (
+        <Text testID="account-notice" style={styles.notice}>
+          {notice}
+        </Text>
+      ) : null}
 
       <Text style={styles.planLine} testID="plan-line">
         Plan: {plan === 'pro' ? 'PRO' : plan === 'free' ? 'Free' : '—'}

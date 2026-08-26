@@ -3,10 +3,9 @@ import {
   checkPrerequisites,
   detectPrerequisiteCycles,
   topologicalSortByPrerequisites,
-  PREREQUISITE_MASTERY_THRESHOLD,
   type ConceptPrerequisiteRelationship,
 } from './prerequisites';
-import { initialAggregate, type MasteryAggregate } from './update';
+import { initialAggregate } from './update';
 
 describe('Prerequisites', () => {
   describe('checkPrerequisites', () => {

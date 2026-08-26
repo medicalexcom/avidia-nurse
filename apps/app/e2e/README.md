@@ -54,6 +54,7 @@ pnpm test:e2e -- e2e/auth.spec.ts -g "should sign up"
 ### `auth.spec.ts`
 
 Authentication and session management:
+
 - Sign-up with email/password
 - Sign-in
 - Invalid credentials error handling
@@ -63,6 +64,7 @@ Authentication and session management:
 ### `study-session.spec.ts`
 
 Daily adaptive study experience:
+
 - START TODAY button visibility
 - Study time selection (5/10/20/45 minutes)
 - Adaptive question flow
@@ -73,6 +75,7 @@ Daily adaptive study experience:
 ### `plan-view.spec.ts`
 
 Study planning and recommendations:
+
 - Exam countdown display
 - Week view with planned items
 - Study recommendations with reasons
@@ -83,6 +86,7 @@ Study planning and recommendations:
 ### `course-enrollment.spec.ts`
 
 Course and material navigation:
+
 - Display available courses
 - Course enrollment flow
 - Course detail and modules
@@ -92,6 +96,7 @@ Course and material navigation:
 ### `mastery-update.spec.ts`
 
 Mastery engine and learning evidence:
+
 - Mastery state updates after study
 - Misconception detection
 - Spaced repetition interval tracking
@@ -112,6 +117,7 @@ test('my test', async ({ authenticatedPage }) => {
 ### `data.fixture.ts`
 
 Realistic test data and scenarios:
+
 - Courses (NCLEX-RN, Fundamentals)
 - Nursing concepts
 - Study plan configurations
@@ -191,12 +197,12 @@ pnpm exec playwright show-trace test-results/trace.zip
 
 ## Environment Variables
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TEST_BASE_URL` | `http://localhost:8081` | App URL for tests |
-| `SUPABASE_URL` | (from `.env`) | Database for auth/data |
-| `SUPABASE_ANON_KEY` | (from `.env`) | Supabase client key |
-| `CI` | (GitHub Actions) | Enables CI-specific behavior |
+| Variable            | Default                 | Purpose                      |
+| ------------------- | ----------------------- | ---------------------------- |
+| `TEST_BASE_URL`     | `http://localhost:8081` | App URL for tests            |
+| `SUPABASE_URL`      | (from `.env`)           | Database for auth/data       |
+| `SUPABASE_ANON_KEY` | (from `.env`)           | Supabase client key          |
+| `CI`                | (GitHub Actions)        | Enables CI-specific behavior |
 
 ## Common Issues
 

@@ -128,8 +128,10 @@ export function isBlomsLevelGroup(value: string): value is BlomsLevelGroup {
 }
 
 export function getCognitiveLevelGroup(level: CognitiveLevel): BlomsLevelGroup {
-  if (BLOOMS_LEVEL_GROUPS.foundational.includes(level as any)) return 'foundational';
-  if (BLOOMS_LEVEL_GROUPS.intermediate.includes(level as any)) return 'intermediate';
+  if ((BLOOMS_LEVEL_GROUPS.foundational as readonly CognitiveLevel[]).includes(level))
+    return 'foundational';
+  if ((BLOOMS_LEVEL_GROUPS.intermediate as readonly CognitiveLevel[]).includes(level))
+    return 'intermediate';
   return 'advanced';
 }
 

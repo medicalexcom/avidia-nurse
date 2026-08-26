@@ -543,8 +543,6 @@ describe('Concept boundary and relationship marker constants', () => {
 
   it('has non-overlapping marker sets', () => {
     const allMarkers = new Set([...CONCEPT_BOUNDARY_MARKERS, ...RELATIONSHIP_MARKERS]);
-    expect(allMarkers.size).toBe(
-      CONCEPT_BOUNDARY_MARKERS.length + RELATIONSHIP_MARKERS.length
-    );
+    expect(allMarkers.size).toBe(CONCEPT_BOUNDARY_MARKERS.length + RELATIONSHIP_MARKERS.length);
   });
 });

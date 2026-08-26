@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/auth.fixture';
-import { testData, testScenarios } from './fixtures/data.fixture';
 
 test.describe('Daily Study Flow', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
@@ -15,9 +14,7 @@ test.describe('Daily Study Flow', () => {
     await expect(startTodayButton).toContainText(/start.*today/i);
 
     // Should show study time options or current plan
-    await expect(
-      authenticatedPage.locator('[data-testid="study-time-indicator"]')
-    ).toBeVisible();
+    await expect(authenticatedPage.locator('[data-testid="study-time-indicator"]')).toBeVisible();
   });
 
   test('should select study time and start adaptive session', async ({ authenticatedPage }) => {
@@ -54,7 +51,9 @@ test.describe('Daily Study Flow', () => {
       await authenticatedPage.click('[data-testid="answer-option-0"]');
 
       // Optionally add confidence rating
-      await authenticatedPage.click('[data-testid="confidence-button"]', { timeout: 1000 }).catch(() => null);
+      await authenticatedPage
+        .click('[data-testid="confidence-button"]', { timeout: 1000 })
+        .catch(() => null);
 
       // Wait for next question or completion
       await authenticatedPage.waitForTimeout(500);
@@ -97,7 +96,7 @@ test.describe('Daily Study Flow', () => {
         });
         await authenticatedPage.click('[data-testid="answer-option-0"]');
         questionCount++;
-      } catch (e) {
+      } catch {
         // Session likely ended
         break;
       }
@@ -108,9 +107,7 @@ test.describe('Daily Study Flow', () => {
 
     // Summary should show counts, concepts, and mastery changes
     await expect(authenticatedPage.locator('[data-testid="questions-answered"]')).toBeVisible();
-    await expect(
-      authenticatedPage.locator('[data-testid="concepts-studied"]')
-    ).toBeVisible();
+    await expect(authenticatedPage.locator('[data-testid="concepts-studied"]')).toBeVisible();
 
     // Should have "Return to Today" or similar button
     const returnButton = authenticatedPage.locator('[data-testid="return-to-today-button"]');

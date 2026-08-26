@@ -13,13 +13,13 @@ export const test = base.extend<AuthFixtures>({
   testEmail: TEST_EMAIL,
   testPassword: TEST_PASSWORD,
 
-  authenticatedPage: async ({ page }, use) => {
+  authenticatedPage: async ({ page }, fixture) => {
     // Navigate to login
     await page.goto('/');
-    
+
     // Wait for auth screen to be ready
     await page.waitForSelector('[data-testid="auth-container"]', { timeout: 5000 });
-    
+
     // Try to find existing session token in localStorage
     const existingToken = await page.evaluate(() => {
       return localStorage.getItem('sb-auth-token') || null;
@@ -31,12 +31,12 @@ export const test = base.extend<AuthFixtures>({
       await page.fill('[data-testid="email-input"]', TEST_EMAIL);
       await page.fill('[data-testid="password-input"]', TEST_PASSWORD);
       await page.click('[data-testid="submit-button"]');
-      
+
       // Wait for redirect to app after sign-up
       await page.waitForNavigation({ url: /\/(app|today)/ });
     }
-    
-    await use(page);
+
+    await fixture(page);
   },
 });
 

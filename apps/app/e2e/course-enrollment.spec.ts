@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/auth.fixture';
-import { testData } from './fixtures/data.fixture';
 
 test.describe('Course Enrollment and Materials', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
@@ -27,9 +26,6 @@ test.describe('Course Enrollment and Materials', () => {
     const enrollButton = authenticatedPage.locator('[data-testid="enroll-button"]').first();
 
     if (await enrollButton.isVisible()) {
-      const courseBefore = authenticatedPage.locator('[data-testid="course-item"]');
-      const countBefore = await courseBefore.count();
-
       await enrollButton.click();
 
       // Should show success message or redirect
@@ -38,7 +34,8 @@ test.describe('Course Enrollment and Materials', () => {
       // Course should show as enrolled
       const enrolledStatus = enrollButton.locator('[data-testid="enrolled-badge"]');
       const isEnrolled =
-        (await enrollButton.isDisabled()) || (await enrolledStatus.isVisible({ timeout: 2000 }).catch(() => false));
+        (await enrollButton.isDisabled()) ||
+        (await enrolledStatus.isVisible({ timeout: 2000 }).catch(() => false));
 
       expect(isEnrolled).toBeTruthy();
     }
@@ -96,10 +93,14 @@ test.describe('Course Enrollment and Materials', () => {
 
     // Should not show error message
     const errorMessage = authenticatedPage.locator('[data-testid="error-message"]');
-    await expect(errorMessage).not.toBeVisible({ timeout: 2000 }).catch(() => null);
+    await expect(errorMessage)
+      .not.toBeVisible({ timeout: 2000 })
+      .catch(() => null);
 
     // Should have content loaded
     const content = authenticatedPage.locator('[data-testid="course-content"]');
-    await expect(content).toBeVisible({ timeout: 2000 }).catch(() => null);
+    await expect(content)
+      .toBeVisible({ timeout: 2000 })
+      .catch(() => null);
   });
 });

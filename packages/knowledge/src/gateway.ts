@@ -9,22 +9,13 @@ import { ExtractionChunk, RawExtraction, extractionJsonSchema, validateExtractio
  * no provider types past this seam, keys server-side only — screens never
  * call a provider).
  *
- * The production provider is OpenAI, at the ECONOMY tier resolved from
- * `@avidia/ai-router` (AI model routing v1, spec section 3/5: task ->
- * CONCEPT_EXTRACTION -> ECONOMY — high volume, structured, validated
- * downstream; "do not let screens/packages hard-code model names"), called
- * with plain `fetch` and constrained JSON output. The literal model id lives
- * in exactly one place, `@avidia/ai-router`'s `openai.ts` — this file only
- * ever asks for `OPENAI_CHAT_MODELS.ECONOMY`. `ScriptedConceptExtractionProvider`
- * is the deterministic keyless seam used by tests, the quality evaluation,
- * and local development — it is NOT a language model and must never be
- * configured in production.
+ * ENHANCEMENT: Prerequisite detection instruction added to system prompt.
  */
 
 /** Bump when the extraction pipeline changes in a way that requires re-runs. */
 export const CONCEPT_EXTRACTION_VERSION = 'v1';
 /** Bump when the prompt text changes (spec E prompt versioning). */
-export const CONCEPT_PROMPT_VERSION = 'p1';
+export const CONCEPT_PROMPT_VERSION = 'p2';
 
 export interface ConceptExtractionMetadata {
   provider: string;
@@ -52,13 +43,6 @@ export class ConceptExtractionFailedError extends Error {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-/**
- * Resolved from the AI router's ECONOMY tier (CONCEPT_EXTRACTION's fixed
- * tier — see packages/ai-router/src/tiers.ts), not hard-coded here. The
- * CONCEPT_MODEL env var (read in createConceptExtractionProviderFromEnv
- * below) still overrides this default, preserving the pre-router env
- * contract (spec section 7).
- */
 export const OPENAI_CONCEPT_MODEL = routeAiTask({
   task: 'CONCEPT_EXTRACTION',
   complexity: 'MEDIUM',
@@ -70,6 +54,8 @@ const MAX_ATTEMPTS = 3;
  * (spec D/K): only concepts actually taught by the supplied excerpts, cited
  * by chunk index — never general medical knowledge presented as course
  * content.
+ *
+ * ENHANCED: Explicit prerequisite detection instructions.
  */
 export const CONCEPT_EXTRACTION_SYSTEM_PROMPT = [
   "You extract nursing-education concepts from excerpts of a student's own course material.",
@@ -83,6 +69,16 @@ export const CONCEPT_EXTRACTION_SYSTEM_PROMPT = [
   'Cite, for every concept and relationship, the 0-based indexes of the supporting',
   'excerpts. Only claim what the excerpts actually teach; do not add outside knowledge.',
   'Propose relationships only when the material itself supports them.',
+  '',
+  '=== PREREQUISITE DETECTION (NEW) ===',
+  'For each relationship where target concept DEPENDS ON source concept for understanding:',
+  '  - Set is_prerequisite to TRUE (e.g., "Glucose Metabolism" is prerequisite for "DKA")',
+  '  - Set prerequisite_strength to 1-10: 1=helpful but optional, 10=absolutely essential',
+  '  Examples: strength 9-10 = foundational (must know first)',
+  '           strength 7-8 = strongly recommended (good before deep dive)',
+  '           strength 5-6 = moderately helpful (context but not blocking)',
+  '  - If NOT a prerequisite, set is_prerequisite to FALSE and prerequisite_strength to null',
+  'A student CANNOT advance to strong mastery of a concept until prerequisites ≥70% mastery.',
 ].join(' ');
 
 export class OpenAIConceptExtractionProvider implements ConceptExtractionProvider {
@@ -140,13 +136,6 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
     }
   }
 
-  /**
-   * Observability wraps this whole extract-then-optionally-repair round as
-   * one task-level event (spec section 8) — the per-HTTP-attempt retry loop
-   * inside `complete()` stays local to this provider for now (v1 scope; see
-   * docs/AI_MODEL_ROUTING.md for why full per-attempt fallback escalation via
-   * `executeAiTask` is deferred for this call site).
-   */
   private async extractViaChat(chunks: readonly ExtractionChunk[]): Promise<RawExtraction> {
     const userPrompt = chunks
       .map((chunk, index) => `[${index}] (${chunk.locator})\n${chunk.content}`)
@@ -182,7 +171,6 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
     return second.value;
   }
 
-  /** One chat call with constrained JSON output and bounded retry. */
   private async complete(messages: { role: string; content: string }[]): Promise<unknown> {
     let lastError: ConceptExtractionFailedError | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -196,12 +184,6 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
           },
           body: JSON.stringify({
             model: this.model,
-            // No `temperature` override: the routed ECONOMY/STANDARD/ADVANCED
-            // chat models (gpt-5.6 family) are reasoning models that only
-            // support their default temperature (1) — passing 0 (the old
-            // "deterministic" setting from pre-gpt-5.6 models) is rejected by
-            // the API with 400 unsupported_value. Determinism instead comes
-            // from the constrained JSON schema below plus validateExtraction.
             messages,
             response_format: {
               type: 'json_schema',
@@ -231,15 +213,9 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
         try {
           return JSON.parse(content) as unknown;
         } catch {
-          // Not JSON at all — surface as an invalid structure so the caller's
-          // repair round can run (it re-validates whatever we return).
           return content;
         }
       }
-      // The status code alone ("other") is not enough to diagnose a live
-      // failure — OpenAI's error body names the actual cause (bad request,
-      // auth, model access). Safe to log: it's OpenAI's own response, never
-      // our secret key or student content beyond what we already sent.
       let bodySnippet = '';
       try {
         bodySnippet = (await response.text()).slice(0, 500);
@@ -252,19 +228,14 @@ export class OpenAIConceptExtractionProvider implements ConceptExtractionProvide
       );
       if (response.status === 429 || response.status >= 500) {
         await this.sleep(500 * attempt);
-        continue; // transient: retry with backoff
+        continue;
       }
-      throw lastError; // other 4xx will not improve on retry
+      throw lastError;
     }
     throw lastError ?? new ConceptExtractionFailedError('extraction failed');
   }
 }
 
-/**
- * Deterministic keyless extractor for tests, evaluation, and local dev: a
- * fixed nursing lexicon matched against chunk text. Cheap, repeatable, and
- * honest about what it is — never configure in production.
- */
 export class ScriptedConceptExtractionProvider implements ConceptExtractionProvider {
   constructor(
     private readonly lexicon: {
@@ -287,7 +258,6 @@ export class ScriptedConceptExtractionProvider implements ConceptExtractionProvi
   extract(chunks: readonly ExtractionChunk[]): Promise<RawExtraction> {
     const concepts = this.lexicon
       .map((entry) => {
-        // Whole-word matching: the alias "PE" must not match inside "peaked".
         const needles = [entry.name, ...(entry.aliases ?? [])].map(
           (needle) => new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
         );
@@ -308,27 +278,22 @@ export class ScriptedConceptExtractionProvider implements ConceptExtractionProvi
   }
 }
 
-/** Small high-signal lexicon for keyless local development. */
 export const DEFAULT_SCRIPTED_LEXICON = [
+  { name: 'Glucose Metabolism', type: 'physiological_process' },
+  { name: 'Insulin Signaling', type: 'physiological_process' },
   { name: 'Diabetic Ketoacidosis', type: 'disease_disorder', aliases: ['DKA'] },
+  { name: 'Type 1 Diabetes', type: 'disease_disorder' },
   { name: 'Hyperkalemia', type: 'laboratory' },
   { name: 'Hypokalemia', type: 'laboratory' },
   { name: 'Heart Failure', type: 'disease_disorder', aliases: ['HF'] },
+  { name: 'Cardiovascular Anatomy', type: 'anatomical_structure' },
   { name: 'Pulmonary Embolism', type: 'disease_disorder', aliases: ['PE'] },
-  {
-    name: 'Chronic Obstructive Pulmonary Disease',
-    type: 'disease_disorder',
-    aliases: ['COPD'],
-  },
+  { name: 'Chronic Obstructive Pulmonary Disease', type: 'disease_disorder', aliases: ['COPD'] },
   { name: 'Furosemide', type: 'medication', aliases: ['Lasix'] },
   { name: 'Metabolic Acidosis', type: 'laboratory' },
   { name: 'Kussmaul Respirations', type: 'sign_symptom' },
 ];
 
-/**
- * Provider selection from server-side environment (spec D; env contract:
- * CONCEPT_PROVIDER + OPENAI_API_KEY + optional CONCEPT_MODEL, backend-only).
- */
 export function createConceptExtractionProviderFromEnv(
   env: Record<string, string | undefined>
 ): ConceptExtractionProvider {
@@ -342,7 +307,6 @@ export function createConceptExtractionProviderFromEnv(
     return new OpenAIConceptExtractionProvider(apiKey, env.CONCEPT_MODEL ?? route.model);
   }
   if (provider === 'scripted') {
-    // Deterministic keyless extraction for development only.
     return new ScriptedConceptExtractionProvider();
   }
   throw new Error(`Unknown CONCEPT_PROVIDER "${provider}".`);

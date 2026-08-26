@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { NAV_DESTINATIONS, pickNavLayout } from './navLayout';
-import { colors, radius, sectionAccents, spacing } from './theme';
+import { colors, radius, sectionAccents, shadow, spacing } from './theme';
 
 /**
  * Authenticated application shell.
@@ -59,8 +59,21 @@ export function ResponsiveShell({ children }: { children: ReactNode }) {
     return (
       <View style={styles.rowRoot}>
         <View style={[styles.sidebar, { paddingTop: insets.top + spacing(6) }]}>
-          <Text style={styles.brand}>Avidia Nurse</Text>
+          <View style={styles.brandLockup}>
+            <View style={styles.brandMark}>
+              <Ionicons name="pulse" size={19} color="#ffffff" />
+            </View>
+            <View>
+              <Text style={styles.brand}>Avidia</Text>
+              <Text style={styles.brandSub}>NURSE</Text>
+            </View>
+          </View>
+          <Text style={styles.navLabel}>WORKSPACE</Text>
           {items}
+          <View style={styles.sidebarFooter}>
+            <Ionicons name="sparkles-outline" size={17} color={colors.primary} />
+            <Text style={styles.sidebarFooterText}>Study with intention.</Text>
+          </View>
         </View>
         <View style={styles.content}>{children}</View>
       </View>
@@ -81,17 +94,47 @@ const styles = StyleSheet.create({
   rowRoot: { flex: 1, flexDirection: 'row', backgroundColor: colors.background },
   columnRoot: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1 },
+  brandLockup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2.5),
+    paddingHorizontal: spacing(3),
+    marginBottom: spacing(7),
+  },
+  brandMark: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.sm,
+  },
   brand: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.text,
-    paddingHorizontal: spacing(4),
-    marginBottom: spacing(4),
+    letterSpacing: -0.4,
+  },
+  brandSub: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    color: colors.primary,
+    marginTop: -1,
+  },
+  navLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: colors.textFaint,
+    paddingHorizontal: spacing(3),
+    marginBottom: spacing(2),
   },
   sidebar: {
-    width: 220,
-    backgroundColor: colors.surface,
-    borderRightWidth: StyleSheet.hairlineWidth,
+    width: 244,
+    backgroundColor: '#fbfbfe',
+    borderRightWidth: 1,
     borderRightColor: colors.border,
     paddingHorizontal: spacing(2),
     gap: spacing(1),
@@ -100,17 +143,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing(2),
-    paddingVertical: spacing(2.5),
+    paddingVertical: spacing(2.75),
     paddingHorizontal: spacing(3),
     borderRadius: radius.sm,
   },
-  sidebarLabel: { fontSize: 15, color: colors.textMuted },
+  sidebarLabel: { fontSize: 14, color: colors.textMuted, fontWeight: '500' },
+  sidebarFooter: {
+    marginTop: 'auto',
+    marginBottom: spacing(5),
+    marginHorizontal: spacing(2),
+    backgroundColor: sectionAccents.home.soft,
+    borderRadius: radius.md,
+    padding: spacing(3),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2),
+  },
+  sidebarFooterText: { color: colors.primary, fontSize: 12, fontWeight: '600', flex: 1 },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing(1.5),
+    ...shadow.sm,
   },
   tabItem: {
     flex: 1,
@@ -120,6 +176,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing(1),
     minHeight: 48,
   },
-  tabLabel: { fontSize: 11, color: colors.textMuted },
+  tabLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
   labelActive: { fontWeight: '600' },
 });

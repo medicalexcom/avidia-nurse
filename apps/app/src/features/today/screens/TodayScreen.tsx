@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 
 import {
@@ -13,7 +14,7 @@ import { rankConcepts, type StudyRecommendation } from '@avidia/mastery';
 import { trackEvent } from '../../../lib/analytics';
 import { getSupabase } from '../../../lib/supabase';
 import { ErrorBanner, PrimaryButton, Screen, SecondaryButton } from '../../../ui/components';
-import { colors, spacing } from '../../../ui/theme';
+import { colors, radius, shadow, spacing } from '../../../ui/theme';
 import { useAuth } from '../../auth/AuthProvider';
 import { listConcepts } from '../../concepts/conceptsApi';
 import { listOwnCourses, type CourseSummary } from '../../courses/coursesApi';
@@ -211,7 +212,13 @@ export function TodayScreen() {
 
       {upcoming && countdown ? (
         <View style={styles.examCard}>
-          <Text style={styles.examTitle}>{upcoming.title}</Text>
+          <View style={styles.examIcon}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          </View>
+          <View style={styles.examCopy}>
+            <Text style={styles.examEyebrow}>NEXT EXAM</Text>
+            <Text style={styles.examTitle}>{upcoming.title}</Text>
+          </View>
           <Text style={styles.examCountdown}>{countdown.label}</Text>
         </View>
       ) : null}
@@ -245,8 +252,16 @@ export function TodayScreen() {
           ) : null}
 
           <View style={styles.startCard}>
-            <Text style={styles.startHeading}>Start today</Text>
-            <Text style={styles.muted}>
+            <View style={styles.startTop}>
+              <View>
+                <Text style={styles.startEyebrow}>YOUR DAILY SESSION</Text>
+                <Text style={styles.startHeading}>Start today</Text>
+              </View>
+              <View style={styles.startIcon}>
+                <Ionicons name="sparkles" size={20} color="#ffffff" />
+              </View>
+            </View>
+            <Text style={styles.startDescription}>
               {data && data.attemptCount === 0
                 ? 'Your first session doubles as a quick check of where you stand.'
                 : 'How much time do you have?'}
@@ -260,7 +275,9 @@ export function TodayScreen() {
                   onPress={() => startSession(minutes)}
                   style={styles.durationChip}
                 >
-                  <Text style={styles.durationText}>{minutes} min</Text>
+                  <Text style={styles.durationText}>
+                    {minutes} <Text style={styles.durationUnit}>min</Text>
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -370,46 +387,106 @@ const styles = StyleSheet.create({
   chipText: { color: colors.textMuted },
   chipTextSelected: { color: colors.text, fontWeight: '600' },
   examCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
+    backgroundColor: '#f0f2ff',
+    borderRadius: radius.lg,
     padding: spacing(4),
     marginBottom: spacing(4),
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dde0fb',
   },
-  examTitle: { color: colors.text, fontWeight: '600', fontSize: 16 },
-  examCountdown: { color: colors.textMuted, marginTop: spacing(2) },
+  examIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing(3),
+  },
+  examCopy: { flex: 1 },
+  examEyebrow: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: 2,
+  },
+  examTitle: { color: colors.text, fontWeight: '700', fontSize: 15 },
+  examCountdown: { color: colors.primaryDark, fontWeight: '700', fontSize: 13 },
   startCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing(4),
-    marginBottom: spacing(4),
-  },
-  startHeading: { color: colors.text, fontWeight: '700', fontSize: 20, marginBottom: spacing(2) },
-  durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2) },
-  durationChip: {
     backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: spacing(3),
-    paddingHorizontal: spacing(4),
-    minHeight: 44,
+    borderRadius: radius.lg,
+    padding: spacing(5),
+    marginBottom: spacing(4),
+    ...shadow.md,
+  },
+  startTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  startEyebrow: {
+    color: '#cdd4ff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.25,
+    marginBottom: spacing(1),
+  },
+  startHeading: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 25,
+    letterSpacing: -0.5,
+    marginBottom: spacing(2),
+  },
+  startIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  durationText: { color: '#ffffff', fontWeight: '600' },
+  startDescription: { color: '#e4e7ff', marginBottom: spacing(3), lineHeight: 21 },
+  durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2), marginTop: spacing(2) },
+  durationChip: {
+    backgroundColor: '#ffffff',
+    borderRadius: radius.md,
+    paddingVertical: spacing(2),
+    paddingHorizontal: spacing(3.5),
+    minWidth: 62,
+    minHeight: 54,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  durationText: { color: colors.primaryDark, fontWeight: '800', fontSize: 17 },
+  durationUnit: {
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     padding: spacing(4),
     marginBottom: spacing(4),
     gap: spacing(1),
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.sm,
   },
   cardHeading: { color: colors.text, fontWeight: '600', fontSize: 16, marginBottom: spacing(2) },
   dueRow: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     padding: spacing(4),
     marginBottom: spacing(4),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.sm,
   },
   dueText: { color: colors.text },
   dueAction: { color: colors.primary, fontWeight: '600' },
@@ -419,13 +496,16 @@ const styles = StyleSheet.create({
   recentRow: { color: colors.textMuted, marginBottom: spacing(1) },
   plannerRow: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     padding: spacing(4),
     marginBottom: spacing(4),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    minHeight: 44,
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.sm,
   },
   footer: { marginTop: spacing(2), gap: spacing(2) },
   streakLine: { color: colors.textMuted, fontSize: 13, marginTop: spacing(3) },

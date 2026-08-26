@@ -273,8 +273,15 @@ export function CourseListRow({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  screenContent: { padding: spacing(6), maxWidth: 720, width: '100%', alignSelf: 'center' },
-  title: { ...type.display, color: colors.text, marginBottom: spacing(4) },
+  screenContent: {
+    paddingHorizontal: spacing(7),
+    paddingTop: spacing(8),
+    paddingBottom: spacing(10),
+    maxWidth: 940,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  title: { ...type.display, color: colors.text, letterSpacing: -0.7, marginBottom: spacing(5) },
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -289,7 +296,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing(3),
     paddingVertical: spacing(2.5),
@@ -298,7 +305,7 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: colors.primary,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     alignItems: 'center',
     paddingVertical: spacing(3),
     marginTop: spacing(2),
@@ -342,6 +349,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing(4),
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadow.sm,
   },
   pill: {

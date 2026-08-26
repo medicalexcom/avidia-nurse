@@ -31,12 +31,14 @@ import {
  * `ScriptedQuestionGenerationProvider` is the deterministic keyless seam
  * used by tests, the quality evaluation, and local development — it is NOT
  * a language model and must never be configured in production.
+ *
+ * Skill #3: Enhanced with Bloom's Taxonomy cognitive level control for multi-level generation.
  */
 
 /** Bump when the generation pipeline changes in a way that requires re-runs. */
-export const QUESTION_GENERATION_VERSION = 'v2';
+export const QUESTION_GENERATION_VERSION = 'v3';
 /** Bump when the prompt text changes (spec AD prompt versioning). */
-export const QUESTION_PROMPT_VERSION = 'p2';
+export const QUESTION_PROMPT_VERSION = 'p3';
 
 export interface QuestionGenerationMetadata {
   provider: string;
@@ -45,11 +47,24 @@ export interface QuestionGenerationMetadata {
   generationVersion: string;
 }
 
+/**
+ * Skill #3: Configuration for generating questions at specific Bloom's levels.
+ */
+export interface BloomsLevelGenerationRequest {
+  /** Target cognitive level(s) for this batch. */
+  targetLevels: 'all' | 'foundational' | 'intermediate' | 'advanced' | readonly string[];
+  /** Whether to generate questions across mixed levels or segregated by level. */
+  segregateByLevel?: boolean;
+  /** Minimum number of questions per cognitive level (when segregated). */
+  minPerLevel?: number;
+}
+
 export interface QuestionGenerationProvider {
   /** Generate schema-valid raw questions for concepts grounded in chunks. */
   generate(
     concepts: readonly GenerationConcept[],
-    chunks: readonly GenerationChunk[]
+    chunks: readonly GenerationChunk[],
+    bloomsRequest?: BloomsLevelGenerationRequest
   ): Promise<RawGeneration>;
   metadata(): QuestionGenerationMetadata;
 }
@@ -86,6 +101,8 @@ const MAX_ATTEMPTS = 3;
  * reasoning over vocabulary (spec D), grounding in the supplied excerpts
  * only (spec G), teaching rationales (spec M), plausible distractors without
  * giveaways (spec N), and deterministic math as data (spec P).
+ *
+ * Skill #3: Enhanced with Bloom's Taxonomy instructions for cognitive level control.
  */
 export const QUESTION_GENERATION_SYSTEM_PROMPT = [
   'You write NCLEX-style practice questions for a nursing student, grounded ONLY in',
@@ -107,6 +124,25 @@ export const QUESTION_GENERATION_SYSTEM_PROMPT = [
   'arithmetic. Set fields that do not apply to null.',
   'Vary difficulty (easy/moderate/hard) and cognitive level; tag nursing priority',
   'frameworks (abc, safety, ...) when the question involves prioritization.',
+  '',
+  '=== BLOOM\'S TAXONOMY COGNITIVE LEVELS (Skill #3) ===',
+  'Map questions to Bloom\'s cognitive levels to build deeper learning:',
+  '  - recall (L1): Remember facts, definitions, terminology',
+  '    Example: "What is the normal potassium range?" Answer: 3.5-5.0 mEq/L',
+  '  - understanding (L2): Explain, summarize, classify, describe concepts',
+  '    Example: "Why does hypokalemia cause muscle weakness?" (pathophysiology)',
+  '  - application (L3): Apply concepts to new situations, solve problems',
+  '    Example: "A client has K+ 2.8. Which intervention is priority?" (clinical decision)',
+  '  - analysis (L4): Analyze parts, distinguish relationships, identify causes',
+  '    Example: "Compare hypokalemia vs hyperkalemia ECG findings and prioritize."',
+  '  - evaluation (L5): Make judgments based on criteria, defend positions',
+  '    Example: "Evaluate these lab values and medications: which poses highest risk?"',
+  '  - synthesis (L6): Combine elements into new patterns, evaluate alternatives',
+  '    Example: "Design a comprehensive monitoring plan for a client on digoxin therapy."',
+  '',
+  'Progress from recall → understanding → application → analysis → evaluation.',
+  'Nursing exams emphasize L3-L5 (clinical reasoning). Start students at L1-L2 to build',
+  'foundational knowledge, then progress to L3-L5 for mastery. Never skip levels.',
 ].join(' ');
 
 export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvider {
@@ -129,14 +165,15 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
 
   async generate(
     concepts: readonly GenerationConcept[],
-    chunks: readonly GenerationChunk[]
+    chunks: readonly GenerationChunk[],
+    bloomsRequest?: BloomsLevelGenerationRequest
   ): Promise<RawGeneration> {
     if (concepts.length === 0 || chunks.length === 0) {
       return { questions: [] };
     }
     const startedAt = Date.now();
     try {
-      const value = await this.generateViaChat(concepts, chunks);
+      const value = await this.generateViaChat(concepts, chunks, bloomsRequest);
       emitAiRouterEvent({
         task: 'QUESTION_GENERATION_ROUTINE',
         complexity: 'MEDIUM',
@@ -178,7 +215,8 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
    */
   private async generateViaChat(
     concepts: readonly GenerationConcept[],
-    chunks: readonly GenerationChunk[]
+    chunks: readonly GenerationChunk[],
+    bloomsRequest?: BloomsLevelGenerationRequest
   ): Promise<RawGeneration> {
     const conceptList = concepts
       .map((concept) => `- ${concept.name} (key: ${concept.key}, type: ${concept.type})`)
@@ -186,9 +224,46 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
     const excerpts = chunks
       .map((chunk, index) => `[${index}] (${chunk.locator})\n${chunk.content}`)
       .join('\n\n');
+
+    // Skill #3: Build Bloom's level instruction for the prompt
+    let bloomsInstruction = '';
+    if (bloomsRequest) {
+      if (bloomsRequest.targetLevels === 'all') {
+        bloomsInstruction =
+          'Mix questions across ALL Bloom\'s cognitive levels (recall, understanding, application, analysis, evaluation, synthesis) ' +
+          'to build comprehensive mastery from foundational to deep reasoning.\n';
+      } else if (bloomsRequest.targetLevels === 'foundational') {
+        bloomsInstruction =
+          'Focus on foundational Bloom\'s levels: recall (facts, definitions) and understanding (explanation, summary). ' +
+          'Build the knowledge foundation before moving to application.\n';
+      } else if (bloomsRequest.targetLevels === 'intermediate') {
+        bloomsInstruction =
+          'Focus on intermediate Bloom\'s levels: application (solve problems, make clinical decisions) and analysis (distinguish relationships, identify causes). ' +
+          'These questions prepare for clinical reasoning on exams.\n';
+      } else if (bloomsRequest.targetLevels === 'advanced') {
+        bloomsInstruction =
+          'Focus on advanced Bloom\'s levels: evaluation (make judgments, defend decisions) and synthesis (combine elements, evaluate alternatives). ' +
+          'These are mastery-level questions requiring integration of multiple concepts.\n';
+      } else if (Array.isArray(bloomsRequest.targetLevels)) {
+        const levels = bloomsRequest.targetLevels.join(', ');
+        bloomsInstruction = `Focus on these specific Bloom\'s cognitive levels: ${levels}.\n`;
+      }
+
+      if (bloomsRequest.segregateByLevel && bloomsRequest.minPerLevel) {
+        bloomsInstruction +=
+          `Segregate questions by cognitive level: generate at least ${bloomsRequest.minPerLevel} ` +
+          `questions for EACH target level so students can practice progressively.\n`;
+      }
+    } else {
+      bloomsInstruction =
+        'Vary cognitive levels across the batch: mix recall, understanding, application, and analysis. ' +
+        'Do NOT ask only definition questions; emphasize clinical reasoning (L3-L5).\n';
+    }
+
     const userPrompt =
       `Concepts to cover (use the given key as concept_key):\n${conceptList}\n\n` +
       `Course material excerpts:\n${excerpts}\n\n` +
+      bloomsInstruction +
       `Write 2-3 questions for EACH concept listed above (never fewer than 2 when the ` +
       `excerpts support it), mixing question types, difficulties and cognitive levels ` +
       `across the set so the batch is not repetitive.`;
@@ -315,6 +390,8 @@ function escapeRegExp(value: string): string {
  * fixed clinical templates instantiated for each supplied concept that
  * actually appears in the chunk text. Cheap, repeatable, and honest about
  * what it is — never configure in production.
+ *
+ * Skill #3: Enhanced to generate questions at different Bloom's levels.
  */
 export class ScriptedQuestionGenerationProvider implements QuestionGenerationProvider {
   metadata(): QuestionGenerationMetadata {
@@ -328,9 +405,25 @@ export class ScriptedQuestionGenerationProvider implements QuestionGenerationPro
 
   generate(
     concepts: readonly GenerationConcept[],
-    chunks: readonly GenerationChunk[]
+    chunks: readonly GenerationChunk[],
+    bloomsRequest?: BloomsLevelGenerationRequest
   ): Promise<RawGeneration> {
     const questions: RawGeneratedQuestion[] = [];
+
+    // Determine which levels to generate
+    let targetLevels: string[] = [];
+    if (!bloomsRequest || bloomsRequest.targetLevels === 'all') {
+      targetLevels = ['recall', 'understanding', 'application', 'analysis'];
+    } else if (bloomsRequest.targetLevels === 'foundational') {
+      targetLevels = ['recall', 'understanding'];
+    } else if (bloomsRequest.targetLevels === 'intermediate') {
+      targetLevels = ['application', 'analysis'];
+    } else if (bloomsRequest.targetLevels === 'advanced') {
+      targetLevels = ['evaluation', 'synthesis'];
+    } else if (Array.isArray(bloomsRequest.targetLevels)) {
+      targetLevels = bloomsRequest.targetLevels as string[];
+    }
+
     for (const concept of concepts) {
       // Whole-word matching against chunk text: cite only real evidence.
       const needle = new RegExp(`\\b${escapeRegExp(concept.name)}\\b`, 'i');
@@ -338,74 +431,212 @@ export class ScriptedQuestionGenerationProvider implements QuestionGenerationPro
         .map((chunk, index) => ({ chunk, index }))
         .filter(({ chunk }) => needle.test(chunk.content))
         .map(({ index }) => index);
+
       if (chunkIndexes.length === 0) {
         continue;
       }
-      questions.push({
-        question_type: 'single_best_answer',
-        stem:
-          `The nurse is caring for a client whose assessment findings are consistent with ` +
-          `${concept.name}. After reviewing the orders, which action should the nurse take first?`,
-        difficulty: 'moderate',
-        cognitive_level: 'application',
-        concept_key: concept.key,
-        priority_frameworks: ['safety'],
-        rationale:
-          `Verifying the client's current status directs every subsequent intervention for ` +
-          `${concept.name}; acting on stale data risks treating the wrong problem.`,
-        options: [
-          {
-            text: 'Complete a focused reassessment and compare against baseline findings',
-            is_correct: true,
-            correct_position: null,
-            rationale: 'Current data must drive the intervention that follows.',
-          },
-          {
-            text: 'Document the findings and continue the plan of care unchanged',
-            is_correct: false,
-            correct_position: null,
-            rationale: 'Continuing unchanged ignores a potentially evolving condition.',
-          },
-          {
-            text: 'Ask the family to observe the client and report any changes later',
-            is_correct: false,
-            correct_position: null,
-            rationale: 'Assessment is a nursing responsibility that cannot be delegated to family.',
-          },
-          {
-            text: 'Prepare discharge teaching materials for the client',
-            is_correct: false,
-            correct_position: null,
-            rationale: 'Teaching is premature while the acute finding is unevaluated.',
-          },
-        ],
-        expected_value: null,
-        tolerance: null,
-        answer_unit: null,
-        rounding_note: null,
-        chunk_indexes: chunkIndexes,
-      });
-      if (concept.type === 'medication') {
-        questions.push({
-          question_type: 'numeric_calculation',
-          stem:
-            `The provider prescribes ${concept.name} 40 mg by mouth daily. The pharmacy ` +
-            `supplies 20 mg tablets. How many tablets should the nurse administer per dose?`,
-          difficulty: 'easy',
-          cognitive_level: 'application',
-          concept_key: concept.key,
-          priority_frameworks: [],
-          rationale:
-            'Dose ordered (40 mg) divided by dose on hand (20 mg per tablet) equals 2 tablets.',
-          options: [],
-          expected_value: 2,
-          tolerance: 0,
-          answer_unit: 'tablets',
-          rounding_note: 'Answer with a whole number of tablets.',
-          chunk_indexes: chunkIndexes,
-        });
+
+      // Skill #3: Generate questions at each target Bloom's level
+      for (const level of targetLevels) {
+        if (level === 'recall') {
+          questions.push({
+            question_type: 'single_best_answer',
+            stem: `What is the normal range for ${concept.name}?`,
+            difficulty: 'easy',
+            cognitive_level: 'recall',
+            concept_key: concept.key,
+            priority_frameworks: [],
+            rationale: `Students must know the definition and normal values of ${concept.name}.`,
+            options: [
+              {
+                text: `The correct normal range for ${concept.name}.`,
+                is_correct: true,
+                correct_position: null,
+                rationale: 'This is the established normal value.',
+              },
+              {
+                text: 'A slightly elevated value.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'This exceeds the normal range.',
+              },
+              {
+                text: 'A slightly decreased value.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'This is below the normal range.',
+              },
+            ],
+            expected_value: null,
+            tolerance: null,
+            answer_unit: null,
+            rounding_note: null,
+            chunk_indexes: chunkIndexes,
+          });
+        } else if (level === 'understanding') {
+          questions.push({
+            question_type: 'single_best_answer',
+            stem: `Explain why understanding ${concept.name} is important in nursing. What does it cause?`,
+            difficulty: 'easy',
+            cognitive_level: 'understanding',
+            concept_key: concept.key,
+            priority_frameworks: [],
+            rationale: `Students must explain the pathophysiology and significance of ${concept.name}.`,
+            options: [
+              {
+                text: `${concept.name} causes changes in cellular function that affect patient outcomes.`,
+                is_correct: true,
+                correct_position: null,
+                rationale: 'This demonstrates understanding of the physiological impact.',
+              },
+              {
+                text: 'It is simply a laboratory value with no clinical significance.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'All clinical values have pathophysiological significance.',
+              },
+              {
+                text: 'It only matters in emergency departments.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Clinical concepts are relevant across all care settings.',
+              },
+            ],
+            expected_value: null,
+            tolerance: null,
+            answer_unit: null,
+            rounding_note: null,
+            chunk_indexes: chunkIndexes,
+          });
+        } else if (level === 'application') {
+          questions.push({
+            question_type: 'single_best_answer',
+            stem:
+              `The nurse is caring for a client with abnormal ${concept.name}. ` +
+              `After reviewing the orders, which action should the nurse take first?`,
+            difficulty: 'moderate',
+            cognitive_level: 'application',
+            concept_key: concept.key,
+            priority_frameworks: ['safety', 'abc'],
+            rationale:
+              `Assessing the client's current status guides every subsequent intervention for ` +
+              `${concept.name}; acting on stale data risks treating the wrong problem.`,
+            options: [
+              {
+                text: 'Complete a focused reassessment and compare against baseline findings.',
+                is_correct: true,
+                correct_position: null,
+                rationale: 'Current data must drive the intervention that follows.',
+              },
+              {
+                text: 'Immediately administer the ordered medication without reassessment.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Assessment must precede intervention to ensure appropriateness.',
+              },
+              {
+                text: 'Notify the provider of the lab value and wait for new orders.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Nursing assessment and stabilization come before notification.',
+              },
+            ],
+            expected_value: null,
+            tolerance: null,
+            answer_unit: null,
+            rounding_note: null,
+            chunk_indexes: chunkIndexes,
+          });
+        } else if (level === 'analysis') {
+          questions.push({
+            question_type: 'multiple_response',
+            stem:
+              `A client presents with multiple abnormal labs including ${concept.name}. ` +
+              `Which findings indicate a need for IMMEDIATE intervention? (Select all that apply)`,
+            difficulty: 'hard',
+            cognitive_level: 'analysis',
+            concept_key: concept.key,
+            priority_frameworks: ['abc', 'safety'],
+            rationale:
+              `Analysis requires distinguishing between urgent and non-urgent findings related to ` +
+              `${concept.name} and its systemic effects.`,
+            options: [
+              {
+                text: 'Cardiac arrhythmias or ECG changes.',
+                is_correct: true,
+                correct_position: null,
+                rationale: 'Cardiac effects are life-threatening and require immediate action.',
+              },
+              {
+                text: 'Muscle weakness or cramping.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'While important, neuromuscular effects are managed after stabilization.',
+              },
+              {
+                text: 'Altered mental status or confusion.',
+                is_correct: true,
+                correct_position: null,
+                rationale: 'Neuro changes indicate systemic involvement requiring urgent intervention.',
+              },
+              {
+                text: 'Mild elevated or decreased value on single lab.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Mild values without symptoms can be monitored and managed.',
+              },
+            ],
+            expected_value: null,
+            tolerance: null,
+            answer_unit: null,
+            rounding_note: null,
+            chunk_indexes: chunkIndexes,
+          });
+        } else if (level === 'evaluation') {
+          questions.push({
+            question_type: 'single_best_answer',
+            stem:
+              `Evaluate the following scenario: A client has abnormal ${concept.name}, ` +
+              `is asymptomatic, and three treatment options are available. Which should the nurse prioritize?`,
+            difficulty: 'hard',
+            cognitive_level: 'evaluation',
+            concept_key: concept.key,
+            priority_frameworks: ['safety', 'ati_prioritization'],
+            rationale:
+              `Evaluation involves making clinical judgments based on evidence, risk stratification, ` +
+              `and patient-centered care principles applied to ${concept.name}.`,
+            options: [
+              {
+                text:
+                  'The most conservative approach that avoids medication unless symptoms develop.',
+                is_correct: true,
+                correct_position: null,
+                rationale:
+                  'Asymptomatic patients tolerate many abnormalities; overtreatment risks harm.',
+              },
+              {
+                text: 'The most aggressive intervention regardless of symptoms.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Aggressive treatment of asymptomatic conditions increases risk without benefit.',
+              },
+              {
+                text: 'Whichever option the previous nurse used.',
+                is_correct: false,
+                correct_position: null,
+                rationale: 'Each patient requires individualized clinical judgment.',
+              },
+            ],
+            expected_value: null,
+            tolerance: null,
+            answer_unit: null,
+            rounding_note: null,
+            chunk_indexes: chunkIndexes,
+          });
+        }
       }
     }
+
     return Promise.resolve({ questions });
   }
 }

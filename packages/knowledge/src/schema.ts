@@ -6,6 +6,8 @@ import { isConceptRelationshipType, isConceptType } from '@avidia/domain';
  * field before it may influence the database. Anything that fails validation
  * is rejected (the gateway then attempts one controlled repair round);
  * arbitrary JSON never reaches persistence.
+ *
+ * ENHANCEMENT: Prerequisite relationship detection for learning path scaffolding.
  */
 
 /** One chunk given to the extractor, with its stable id and provenance hint. */
@@ -36,6 +38,10 @@ export interface RawRelationshipCandidate {
   type: string;
   /** 0-based index of the chunk that evidences the relationship. */
   chunk_index: number;
+  /** NEW: Prerequisite strength [1-10], higher = stronger prerequisite (required). */
+  prerequisite_strength?: number | null;
+  /** NEW: Whether target MUST know source before studying (boolean flag). */
+  is_prerequisite?: boolean;
 }
 
 export interface RawExtraction {
@@ -48,6 +54,7 @@ export type SchemaResult = { ok: true; value: RawExtraction } | { ok: false; err
 const MAX_CONCEPTS_PER_BATCH = 60;
 const MAX_RELATIONSHIPS_PER_BATCH = 60;
 const MAX_ALIASES_PER_CONCEPT = 6;
+const MAX_PREREQUISITE_STRENGTH = 10;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -137,6 +144,26 @@ export function validateExtraction(raw: unknown, chunkCount: number): SchemaResu
           `relationships[${index}].chunk_index must be an integer in [0, ${chunkCount - 1}]`
         );
       }
+      // NEW: Validate prerequisite strength if present
+      if (
+        relationship.prerequisite_strength !== undefined &&
+        relationship.prerequisite_strength !== null &&
+        (typeof relationship.prerequisite_strength !== 'number' ||
+          !Number.isInteger(relationship.prerequisite_strength) ||
+          relationship.prerequisite_strength < 1 ||
+          relationship.prerequisite_strength > MAX_PREREQUISITE_STRENGTH)
+      ) {
+        errors.push(
+          `relationships[${index}].prerequisite_strength must be null or an integer in [1, ${MAX_PREREQUISITE_STRENGTH}]`
+        );
+      }
+      // NEW: Validate is_prerequisite if present
+      if (
+        relationship.is_prerequisite !== undefined &&
+        typeof relationship.is_prerequisite !== 'boolean'
+      ) {
+        errors.push(`relationships[${index}].is_prerequisite must be a boolean when present`);
+      }
     });
   }
   if (errors.length > 0) {
@@ -186,12 +213,14 @@ export function extractionJsonSchema(
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['source', 'target', 'type', 'chunk_index'],
+          required: ['source', 'target', 'type', 'chunk_index', 'prerequisite_strength', 'is_prerequisite'],
           properties: {
             source: { type: 'string' },
             target: { type: 'string' },
             type: { type: 'string', enum: [...relationshipTypes] },
             chunk_index: { type: 'integer' },
+            prerequisite_strength: { type: ['integer', 'null'] },
+            is_prerequisite: { type: 'boolean' },
           },
         },
       },

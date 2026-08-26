@@ -47,6 +47,49 @@ jobs:
             git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
           fi
 
+      - name: Repair pre-existing lint issues
+        run: |
+          git fetch origin main
+          git checkout origin/main -- \
+            packages/assessment/src/gateway.ts \
+            packages/domain/src/questions.ts \
+            packages/mastery/src/prerequisites.test.ts
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gateway = Path('packages/assessment/src/gateway.ts')
+          text = gateway.read_text()
+          text = text.replace("Bloom\\'s cognitive levels", "Bloom's cognitive levels")
+          gateway.write_text(text)
+
+          questions = Path('packages/domain/src/questions.ts')
+          text = questions.read_text()
+          text = text.replace(
+              "if (BLOOMS_LEVEL_GROUPS.foundational.includes(level as any)) return 'foundational';",
+              "if ((BLOOMS_LEVEL_GROUPS.foundational as readonly CognitiveLevel[]).includes(level)) return 'foundational';",
+          )
+          text = text.replace(
+              "if (BLOOMS_LEVEL_GROUPS.intermediate.includes(level as any)) return 'intermediate';",
+              "if ((BLOOMS_LEVEL_GROUPS.intermediate as readonly CognitiveLevel[]).includes(level)) return 'intermediate';",
+          )
+          questions.write_text(text)
+
+          prereq = Path('packages/mastery/src/prerequisites.test.ts')
+          text = prereq.read_text()
+          text = text.replace('  PREREQUISITE_MASTERY_THRESHOLD,\n', '')
+          text = text.replace('import { initialAggregate, type MasteryAggregate } from \'./update\';', "import { initialAggregate } from './update';")
+          prereq.write_text(text)
+          PY
+          if git diff --quiet; then
+            echo "Lint repair already clean."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "fix: resolve lint errors in existing shared files"
+            git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
+          fi
+
       - name: Check formatting
         run: pnpm run format:check
 

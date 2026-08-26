@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/auth.fixture';
-import { testData, testScenarios } from './fixtures/data.fixture';
 
 test.describe('Daily Study Flow', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
@@ -97,7 +96,7 @@ test.describe('Daily Study Flow', () => {
         });
         await authenticatedPage.click('[data-testid="answer-option-0"]');
         questionCount++;
-      } catch (e) {
+      } catch {
         // Session likely ended
         break;
       }

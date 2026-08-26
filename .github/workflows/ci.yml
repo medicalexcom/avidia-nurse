@@ -46,7 +46,10 @@ jobs:
 
           gateway = Path('packages/assessment/src/gateway.ts')
           text = gateway.read_text()
-          text = text.replace("Bloom\\'s cognitive levels", "Bloom's cognitive levels")
+          text = text.replace(
+              "'Map questions to Bloom's cognitive levels to build deeper learning:',",
+              '"Map questions to Bloom\'s cognitive levels to build deeper learning:",',
+          )
           gateway.write_text(text)
 
           questions = Path('packages/domain/src/questions.ts')

@@ -126,7 +126,7 @@ export const QUESTION_GENERATION_SYSTEM_PROMPT = [
   'frameworks (abc, safety, ...) when the question involves prioritization.',
   '',
   '=== BLOOM\'S TAXONOMY COGNITIVE LEVELS (Skill #3) ===',
-  'Map questions to Bloom's cognitive levels to build deeper learning:',
+  "Map questions to Bloom's cognitive levels to build deeper learning:",
   '  - recall (L1): Remember facts, definitions, terminology',
   '    Example: "What is the normal potassium range?" Answer: 3.5-5.0 mEq/L',
   '  - understanding (L2): Explain, summarize, classify, describe concepts',
@@ -230,7 +230,7 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
     if (bloomsRequest) {
       if (bloomsRequest.targetLevels === 'all') {
         bloomsInstruction =
-          'Mix questions across ALL Bloom's cognitive levels (recall, understanding, application, analysis, evaluation, synthesis) ' +
+          'Mix questions across ALL Bloom\'s cognitive levels (recall, understanding, application, analysis, evaluation, synthesis) ' +
           'to build comprehensive mastery from foundational to deep reasoning.\n';
       } else if (bloomsRequest.targetLevels === 'foundational') {
         bloomsInstruction =
@@ -246,7 +246,7 @@ export class OpenAIQuestionGenerationProvider implements QuestionGenerationProvi
           'These are mastery-level questions requiring integration of multiple concepts.\n';
       } else if (Array.isArray(bloomsRequest.targetLevels)) {
         const levels = bloomsRequest.targetLevels.join(', ');
-        bloomsInstruction = `Focus on these specific Bloom's cognitive levels: ${levels}.\n`;
+        bloomsInstruction = `Focus on these specific Bloom\'s cognitive levels: ${levels}.\n`;
       }
 
       if (bloomsRequest.segregateByLevel && bloomsRequest.minPerLevel) {

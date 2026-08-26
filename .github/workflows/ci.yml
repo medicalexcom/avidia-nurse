@@ -46,12 +46,16 @@ jobs:
 
           gateway = Path('packages/assessment/src/gateway.ts')
           lines = gateway.read_text().splitlines()
-          gateway.write_text(
-              '\n'.join(
-                  '  "Map questions to Bloom\'s cognitive levels to build deeper learning:",' if "Map questions to Bloom" in line else line
-                  for line in lines
-              ) + '\n'
-          )
+          repaired = []
+          for line in lines:
+              if "Map questions to Bloom" in line:
+                  line = '  "Map questions to Bloom\'s cognitive levels to build deeper learning:",' 
+              elif "Focus on intermediate Bloom" in line or "Focus on advanced Bloom" in line:
+                  line = line.replace("\\'s", "'s").replace("'Focus on", '"Focus on', 1).replace(". ' +", '. " +')
+              elif "Focus on these specific Bloom" in line:
+                  line = line.replace("\\'s", "'s")
+              repaired.append(line)
+          gateway.write_text('\n'.join(repaired) + '\n')
 
           questions = Path('packages/domain/src/questions.ts')
           text = questions.read_text()

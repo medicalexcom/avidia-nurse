@@ -44,18 +44,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      # Corepack is not enabled on every hosted Node 22 image. Install pnpm
-      # explicitly so subsequent steps never depend on the runner PATH.
+      # pnpm must be on PATH before actions/setup-node@v5 runs: setup-node
+      # auto-detects the "packageManager" field in package.json and invokes
+      # pnpm directly, which previously failed every run with "Unable to
+      # locate executable file: pnpm" because pnpm wasn't installed yet.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.17.0
           run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
 
       - name: Install dependencies
         run: |
